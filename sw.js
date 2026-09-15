@@ -1,5 +1,5 @@
 /* Ekol Glass Üretim Takip — Service Worker */
-const VERSION = 'utm-v1.3.0';
+const VERSION = 'utm-v1.3.1';
 const SHELL = [
   './',
   './index.html',
