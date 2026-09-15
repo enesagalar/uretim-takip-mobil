@@ -59,7 +59,7 @@ const I = {
 
 /* ---------- Yapılandırma & Durum ---------- */
 const LS_KEY = 'utm_cfg_v1';
-const DEFAULT_CFG = { server: 'http://192.168.1.200:3001', live: true, pollSec: 20, demo: false, pdfTpl: '' };
+const DEFAULT_CFG = { server: 'http://192.168.1.200:3001', live: true, pollSec: 20, demo: false, pdfTpl: '', manual: false };
 let cfg = (() => { try { return { ...DEFAULT_CFG, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}') }; } catch { return { ...DEFAULT_CFG }; } })();
 const saveCfg = () => localStorage.setItem(LS_KEY, JSON.stringify(cfg));
 
@@ -79,7 +79,8 @@ const S = {
   ws: null, wsOk: false, wsAttempts: 0, wsDead: false,
   pollTimer: null, demoTimer: null,
   lastSync: 0, clients: 0, loading: false, bootFailed: false,
-  installEvt: null, hiddenUpdate: false
+  installEvt: null, hiddenUpdate: false,
+  tunnelURL: null, tunnelBusy: false, lastTunnelTry: 0
 };
 
 /* Liste ekranı durumu (yeniden çizimde korunur) */
@@ -91,7 +92,8 @@ const L = Object.assign(
 const saveFilters = () => localStorage.setItem(FL_KEY, JSON.stringify({ status: L.status, proc: L.proc, customer: L.customer, days: L.days, sort: L.sort }));
 
 /* ---------- Veri Katmanı ---------- */
-function apiURL(path) { return cfg.server.replace(/\/+$/, '') + path; }
+function effectiveServer() { return S.tunnelURL || cfg.server; }
+function apiURL(path) { return effectiveServer().replace(/\/+$/, '') + path; }
 
 async function api(path, timeoutMs = 12000) {
   const ctl = new AbortController();
@@ -160,9 +162,32 @@ function isMixedContent() {
 
 function wsURL() {
   try {
-    const u = new URL(cfg.server);
+    const u = new URL(effectiveServer());
     return (u.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + u.host;
   } catch { return null; }
+}
+
+/* Tünel keşfi: repo'daki tunnel.json geçerli tünel adresini taşır.
+   Manuel sunucu seçilmedikçe, LAN adresi başarısızsa otomatik denenir. */
+async function tryTunnel() {
+  if (cfg.manual || cfg.demo || S.tunnelBusy) return false;
+  if (Date.now() - S.lastTunnelTry < 30000) return false;
+  S.lastTunnelTry = Date.now(); S.tunnelBusy = true;
+  try {
+    const r = await fetch('./tunnel.json?v=' + Date.now(), { cache: 'no-store' });
+    const j = await r.json();
+    const u = String((j && j.url) || '').replace(/\/+$/, '');
+    if (!/^https:\/\/.+/.test(u)) return false;
+    if (u === effectiveServer()) { if (!S.wsOk && !S.loading) { refreshREST(true); } return false; }
+    S.tunnelURL = u;
+    S.wsDead = false; S.wsAttempts = 0; S.bootFailed = false;
+    stopPolling();
+    connectWS();
+    refreshREST(true);
+    render(route());
+    return true;
+  } catch { return false; }
+  finally { S.tunnelBusy = false; }
 }
 
 function connectWS() {
@@ -234,6 +259,8 @@ async function refreshREST(silent) {
   } catch (e) {
     if (!S.orders.length) S.bootFailed = true;
     if (!silent) toast('Sunucuya ulaşılamadı');
+    // LAN/manuel adres başarısız → tünel keşfini dene (otomatik kip)
+    if (!cfg.manual) setTimeout(() => { tryTunnel(); }, 1500);
   } finally {
     S.loading = false; paintStatus(); renderIfStale();
   }
@@ -372,13 +399,14 @@ function paintStatus() {
     return;
   }
   const state = S.wsOk ? 'on' : S.wsDead ? 'off' : 'wait';
-  const label = S.wsOk ? 'CANLI' : S.wsDead ? 'BAĞLANTI YOK' : 'BAĞLANIYOR';
+  const label = S.wsOk ? (S.tunnelURL ? 'CANLI · TÜNEL' : 'CANLI') : S.wsDead ? 'BAĞLANTI YOK' : 'BAĞLANIYOR';
   if (pill) { pill.className = 'live-pill ' + state; pill.innerHTML = '<span class="dot"></span>' + label; }
   if (sync) {
     const extra = S.wsOk && S.clients ? ' · ' + S.clients + ' cihaz bağlı' : '';
+    const host = effectiveServer().replace(/^https?:\/\//, '');
     sync.innerHTML =
       '<span>' + esc(timeAgo(S.lastSync)) + ' güncellendi' + extra + '</span>' +
-      '<span>' + esc(cfg.server.replace(/^https?:\/\//, '')) + '</span>';
+      '<span>' + esc(host) + (S.tunnelURL ? ' (tünel)' : '') + '</span>';
   }
   const btn = $('#refresh-btn');
   if (btn) btn.classList.toggle('spin', S.loading);
@@ -850,6 +878,8 @@ function viewAyarlar() {
     '<div class="field" style="margin-bottom:10px"><label>Sunucu Adresi</label><input type="text" id="set-server" value="' + esc(cfg.server) + '" inputmode="url" autocapitalize="off" spellcheck="false"><div class="hint">Örn: http://192.168.1.200:3001 — üretim takip sunucusunun adresi</div></div>' +
     '<div class="field" style="margin-bottom:10px"><label>Teknik Resim Adres Şablonu (PDF)</label><input type="text" id="set-pdftpl" value="' + esc(cfg.pdfTpl || '') + '" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://sunucu/klasor/{kod}.pdf"><div class="hint">{kod} yerine ürün/kalıp kodu yazılır. Teknik resimler iş emri detayında PDF olarak açılır. Bazı ürünlerde dosya olmayabilir; olmayanlarda düğme çıkmaz.</div></div>' +
     '<div style="display:flex;gap:10px"><button class="btn primary" id="save-server" style="flex:1">Kaydet & Bağlan</button><button class="btn ghost" id="test-server" style="flex:1">Bağlantı Testi</button></div>' +
+    (cfg.manual ? '<div style="margin-top:10px"><button class="btn ghost small" id="auto-server">↺ Otomatik Bağlantıya Dön (LAN + tünel keşfi)</button></div>' : '') +
+    '<div class="hint">Şu an etkin: <b>' + esc(effectiveServer()) + (S.tunnelURL ? ' (tünel)' : '') + '</b>' + (cfg.manual ? ' — manuel' : ' — otomatik: önce LAN, olmazsa tünel') + '</div>' +
     '<div id="test-result" style="margin-top:10px"></div>' +
     '<div class="setrow"><div><div class="sl">Canlı Güncelleme (WebSocket)</div><div class="sd">Sunucu değişiklikleri anında yansır</div></div><label class="switch"><input type="checkbox" id="set-live" ' + (cfg.live ? 'checked' : '') + '><span class="track"></span><span class="thumb"></span></label></div>' +
     '<div class="setrow"><div><div class="sl">Yedek Yenileme Aralığı</div><div class="sd">WebSocket yoksa bu sıklıkla yenilenir</div></div><select id="set-poll" style="padding:8px 10px;border-radius:9px;border:1px solid var(--border-strong);background:var(--card);color:var(--text);font-weight:700">' + [10, 20, 30, 60].map((s) => '<option value="' + s + '" ' + (cfg.pollSec == s ? 'selected' : '') + '>' + s + ' sn</option>').join('') + '</select></div>' +
@@ -945,18 +975,27 @@ function afterRender(r) {
 
   if (r.name === 'ozet' || r.name === 'ayarlar') {
     const d = $('#demo-btn2'); if (d) d.onclick = () => { cfg.demo = true; saveCfg(); reboot(); };
-    const rt = $('#retry-btn'); if (rt) rt.onclick = () => { S.wsDead = false; S.wsAttempts = 0; S.bootFailed = false; refreshREST(false); connectWS(); render(route()); };
+    const rt = $('#retry-btn'); if (rt) rt.onclick = async () => {
+      S.wsDead = false; S.wsAttempts = 0; S.bootFailed = false; S.lastTunnelTry = 0; S.tunnelURL = null;
+      await tryTunnel();
+      if (!S.wsOk) { refreshREST(false); connectWS(); }
+      render(route());
+    };
   }
 
   if (r.name === 'ayarlar') {
     $('#save-server').onclick = () => {
       const v = $('#set-server').value.trim().replace(/\/+$/, '');
       if (!/^https?:\/\/.+/.test(v)) { toast('Geçerli bir adres girin (http://…)'); return; }
-      cfg.server = v;
+      cfg.server = v; cfg.manual = true; S.tunnelURL = null;
       const tp = $('#set-pdftpl').value.trim();
       if (tp && !tp.includes('{kod}')) { toast('PDF şablonunda {kod} eksik'); return; }
       cfg.pdfTpl = tp; pdfProbe.clear();
       saveCfg(); toast('Kaydedildi, bağlanılıyor…'); reboot();
+    };
+    $('#auto-server').onclick = () => {
+      cfg.manual = false; S.tunnelURL = null; S.wsDead = false; S.wsAttempts = 0; S.lastTunnelTry = 0;
+      saveCfg(); toast('Otomatik kipe geçildi'); reboot();
     };
     $('#test-server').onclick = async () => {
       const v = $('#set-server').value.trim().replace(/\/+$/, '');
@@ -1048,14 +1087,19 @@ async function boot() {
   connectWS();
   refreshREST(true);
 
-  // 10 sn sonra hâlâ veri yoksa hata görünümü
-  setTimeout(() => { if (!S.orders.length) { S.bootFailed = true; render(route()); } }, 10000);
+  // 10 sn sonra hâlâ veri yoksa: önce tünel keşfi, olmuyorsa hata görünümü
+  setTimeout(async () => {
+    if (!S.orders.length) {
+      const ok = await tryTunnel();
+      if (!ok && !S.orders.length) { S.bootFailed = true; render(route()); }
+    }
+  }, 10000);
 
-  // arka plana dönünce hızlı tazele
+  // arka plana dönünce hızlı tazele; bağlantı düşükse tünel değişmiş olabilir
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && !cfg.demo && S.orders.length) {
-      if (S.wsOk) { try { S.ws.send(JSON.stringify({ type: 'GET_DATA' })); } catch {} }
-      else refreshREST(true);
+    if (!document.hidden && !cfg.demo) {
+      if (S.wsOk && S.orders.length) { try { S.ws.send(JSON.stringify({ type: 'GET_DATA' })); } catch {} }
+      else { S.wsDead = false; S.wsAttempts = 0; S.lastTunnelTry = 0; tryTunnel().then(() => { if (!S.wsOk) { connectWS(); refreshREST(true); } }); }
     }
   });
 }

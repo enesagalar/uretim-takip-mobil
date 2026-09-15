@@ -1,12 +1,12 @@
 /* Ekol Glass Üretim Takip — Service Worker */
-const VERSION = 'utm-v1.2.0';
+const VERSION = 'utm-v1.3.0';
 const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/app.css?v=1.2.0',
-  './js/app.js?v=1.2.0',
-  './js/demo-data.js?v=1.2.0',
+  './css/app.css?v=1.3.0',
+  './js/app.js?v=1.3.0',
+  './js/demo-data.js?v=1.3.0',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './assets/logo.png'
@@ -28,8 +28,8 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // API ve cross-origin istekleri dokunma; WebSocket SW'den geçmez
-  if (url.pathname.includes('/api/') || url.origin !== location.origin) return;
+  // API, tünel bilgisi ve cross-origin istekleri dokunma; WebSocket SW'den geçmez
+  if (url.pathname.includes('/api/') || url.pathname.endsWith('/tunnel.json') || url.origin !== location.origin) return;
 
   if (e.request.mode === 'navigate') {
     // Sayfa: ağ önce, yoksa önbellek
