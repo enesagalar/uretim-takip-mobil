@@ -63,6 +63,18 @@ https://enesagalar.github.io/uretim-takip-mobil/?server=https://TUNEL-ADRESINIZ
 
 Bağlantı açıldığında adres kaydedilir; sonra normal kullanıma devam edilir. `?demo=1` demo kipini açar.
 
+## Otomatik Bağlantı (tünel keşfi) — v1.3+
+
+Uygulama **otomatik kipte** çalışır: önce kayıtlı/LAN sunucu adresini dener; erişilemezse
+repo'daki `tunnel.json` dosyasındaki güncel tünel adresini bularak kendini onarır.
+Tünel adresi her değiştiğinde **tünel bekçisi** (`tunnel/watchdog.js`, bu depoda) yeni adresi
+`tunnel.json`'a yazar ve GitHub'a iter; tüm telefonlar bir sonraki açılışta kendini toparlar.
+
+Bekçiyi bu PC'de çalıştırma: `tunnel/baslat-tunel.bat` (Başlangıç klasörüne kopyalanmış hali
+otomatik başlar). Bekçi çalışmıyorsa ve LAN dışındaysanız uygulama "bağlantı yok" gösterir;
+PC'de bekçiyi başlatmak yeterlidir. Ayarlar'dan manuel adres girilirse otomatik keşif devre dışı kalır
+("Otomatik Bağlantıya Dön" düğmesiyle geri kazanılır).
+
 ## Teknik Resimler (PDF)
 
 Teknik resim dosyaları web üzerinden yayımlanmadığı sürece uygulama bunlara erişemez. Erişilebilir
