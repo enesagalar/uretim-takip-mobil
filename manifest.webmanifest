@@ -1,0 +1,18 @@
+{
+  "name": "Ekol Glass Üretim Takip",
+  "short_name": "Üretim Takip",
+  "description": "Ekol Glass üretim takip sistemi — anlık iş emri ve proses takibi",
+  "lang": "tr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#084F7D",
+  "theme_color": "#084F7D",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
