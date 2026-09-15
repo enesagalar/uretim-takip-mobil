@@ -50,12 +50,16 @@ const I = {
   trendUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 7 13.5 15.5l-4-4L2 19"/><path d="M16 7h6v6"/></svg>',
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></svg>',
-  play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8z"/></svg>'
+  play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8z"/></svg>',
+  filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/></svg>',
+  mold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M12 8v8"/></svg>',
+  ruler: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2M4.5 13.5l2 2"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>'
 };
 
 /* ---------- Yapılandırma & Durum ---------- */
 const LS_KEY = 'utm_cfg_v1';
-const DEFAULT_CFG = { server: 'http://192.168.1.200:3001', theme: 'auto', live: true, pollSec: 20, demo: false };
+const DEFAULT_CFG = { server: 'http://192.168.1.200:3001', live: true, pollSec: 20, demo: false };
 let cfg = (() => { try { return { ...DEFAULT_CFG, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}') }; } catch { return { ...DEFAULT_CFG }; } })();
 const saveCfg = () => localStorage.setItem(LS_KEY, JSON.stringify(cfg));
 
@@ -69,14 +73,12 @@ const S = {
 };
 
 /* Liste ekranı durumu (yeniden çizimde korunur) */
-const L = { q: '', status: 'Aktif', shown: 25 };
-
-/* ---------- Tema ---------- */
-function applyTheme() {
-  const t = cfg.theme === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : cfg.theme;
-  document.documentElement.setAttribute('data-theme', t);
-}
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (cfg.theme === 'auto') applyTheme(); });
+const FL_KEY = 'utm_filters_v1';
+const L = Object.assign(
+  { q: '', status: 'Aktif', shown: 25, proc: 0, customer: '', days: 0, sort: 'new' },
+  (() => { try { return JSON.parse(localStorage.getItem(FL_KEY) || '{}'); } catch { return {}; } })()
+);
+const saveFilters = () => localStorage.setItem(FL_KEY, JSON.stringify({ status: L.status, proc: L.proc, customer: L.customer, days: L.days, sort: L.sort }));
 
 /* ---------- Veri Katmanı ---------- */
 function apiURL(path) { return cfg.server.replace(/\/+$/, '') + path; }
@@ -85,10 +87,27 @@ async function api(path, timeoutMs = 12000) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const r = await fetch(apiURL(path), { signal: ctl.signal });
+    const r = await fetch(apiURL(path), {
+      signal: ctl.signal,
+      headers: { 'ngrok-skip-browser-warning': 'utm' }  // ngrok ücretsiz tünel için (başka sunucularda etkisiz)
+    });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
   } finally { clearTimeout(t); }
+}
+
+/* Kalıphane bilgisi (ürün kodu → raf/açıklama), önbellekli */
+const moldCache = new Map();
+async function moldInfo(code) {
+  const c = String(code || '').trim();
+  if (!c) return null;
+  if (moldCache.has(c)) return moldCache.get(c);
+  try {
+    const r = await api('/api/mold-location/' + encodeURIComponent(c), 6000);
+    const info = r && r.success ? r : null;
+    moldCache.set(c, info);
+    return info;
+  } catch { moldCache.set(c, null); return null; }
 }
 
 function isMixedContent() {
@@ -474,11 +493,18 @@ function woCard(o) {
     if (diff < 0) dueChip = '<span class="badge termin-gec">Termin: ' + dateTR(o.dueDate) + '</span>';
     else if (diff <= 3) dueChip = '<span class="badge termin">Termin: ' + dateTR(o.dueDate) + '</span>';
   }
+  const dots = procs.slice(0, 7).map((p) => {
+    const ps = trLower(p.status || 'beklemede');
+    const cls = ps.startsWith('tamamland') ? 'done' : ps.includes('devam') ? 'run' : 'pend';
+    return '<span class="pd ' + cls + '"><i></i>' + esc(String(p.name).split(' ')[0].slice(0, 9)) + '</span>';
+  }).join('') + (procs.length > 7 ? '<span class="pd pend" style="background:none">+' + (procs.length - 7) + '</span>' : '');
+
   return '<div class="card tap wo-card" data-go="#/emir/' + esc(o.id) + '">' +
     '<div class="wo-top"><span class="wo-no">#' + esc(o.workOrderNumber) + '</span>' + badge + '</div>' +
     '<div class="wo-name">' + esc((o.productName || 'Ürün belirtilmemiş').trim()) + '</div>' +
     '<div class="wo-meta"><span><b>' + num(q) + ' adet</b></span><span>' + m2fmt(m2) + ' m²</span><span>' + esc(String(o.width || '').trim()) + '×' + esc(String(o.height || '').trim()) + ' mm</span><span>' + esc((o.thickness || '').trim()) + '</span><span>' + esc((o.color || '').trim()) + '</span></div>' +
     '<div class="wo-meta" style="margin-top:3px"><span>' + esc((o.customerName || '').trim()) + '</span>' + (dueChip ? '<span>' + dueChip + '</span>' : '') + '</div>' +
+    '<div class="proc-dots">' + dots + '</div>' +
     '<div class="wo-foot"><div class="progress"><i style="width:' + pct + '%"></i></div><span class="wo-proc">' + done + '/' + procs.length + '</span></div>' +
     (next && st === 'aktif' ? '<div class="next-proc">Sıradaki: <b>' + esc(next.name) + '</b>' + (trLower(next.status || '').includes('devam') ? ' · <span class="badge devam">devam ediyor</span>' : '') + '</div>' : '') +
     '</div>';
@@ -489,10 +515,97 @@ function viewEmirler() {
   const chips = [['Aktif', 'Aktif'], ['Tamamlandı', 'Tamamlandı'], ['İptal', 'İptal'], ['', 'Tümü']].map(([v, l]) =>
     '<div class="chip ' + (L.status === v ? 'active' : '') + '" data-status="' + v + '">' + l + '</div>'
   ).join('');
+  const n = activeFilterCount();
   return '<div class="wrap" style="padding-bottom:4px">' +
+    '<div class="filter-row">' +
     '<div class="searchbar">' + I.search + '<input id="wo-search" type="search" placeholder="İş emri no, ürün, müşteri ara…" value="' + esc(L.q) + '" autocomplete="off"></div>' +
+    '<button class="filterbtn ' + (n ? 'has' : '') + '" id="filter-btn">' + I.filter + (n ? '<span class="cnt">' + n + '</span>' : '') + '</button>' +
+    '</div>' +
     '<div class="chips">' + chips + '</div>' +
     '</div><div class="wrap" id="wo-list"></div>';
+}
+
+/* Filtre alt paneli */
+function openFilterSheet() {
+  const host = $('#sheet-host');
+  const procs = knownProcesses();
+  const custs = topCustomers();
+  const sortLbls = { new: 'Yeni→Eski', old: 'Eski→Yeni', due: 'Termin', qty: 'Adet', m2: 'm²' };
+  host.innerHTML =
+    '<div class="sheet-backdrop" id="sh-backdrop"></div>' +
+    '<div class="sheet" id="sh-sheet">' +
+    '<div class="sheet-grab"></div>' +
+    '<div class="sheet-head"><h3>Filtreler</h3><button class="sheet-close" id="sh-close">✕</button></div>' +
+
+    '<div class="sec-title">Proses <span style="color:var(--muted);text-transform:none;letter-spacing:0">(seçilen proseste bekleyen/devam)</span></div>' +
+    '<div class="chip-wrap">' + '<div class="chip ' + (!L.proc ? 'active' : '') + '" data-f="proc" data-v="0">Tümü</div>' +
+    procs.map((p) => '<div class="chip ' + (L.proc === p.id ? 'active' : '') + '" data-f="proc" data-v="' + p.id + '">' + esc(p.name) + '</div>').join('') + '</div>' +
+
+    '<div class="sec-title">Müşteri</div>' +
+    '<div class="mini-search">' + I.search + '<input id="cust-search" type="search" placeholder="Müşteri ara…" autocomplete="off"></div>' +
+    '<div class="chip-wrap" id="cust-list">' + '<div class="chip ' + (!L.customer ? 'active' : '') + '" data-f="customer" data-v="">Tümü</div>' +
+    custs.map((c) => '<div class="chip ' + (L.customer === c ? 'active' : '') + '" data-f="customer" data-v="' + esc(c) + '">' + esc(c) + '</div>').join('') + '</div>' +
+
+    '<div class="sec-title">Tarih (oluşturma)</div>' +
+    '<div class="seg" id="day-seg">' +
+    [[0, 'Tümü'], [1, 'Bugün'], [7, '7 Gün'], [30, '30 Gün']].map(([v, l]) => '<button data-f="days" data-v="' + v + '" class="' + (L.days === v ? 'active' : '') + '">' + l + '</button>').join('') +
+    '</div>' +
+
+    '<div class="sec-title">Sıralama</div>' +
+    '<div class="seg">' +
+    Object.entries(sortLbls).map(([v, l]) => '<button data-f="sort" data-v="' + v + '" class="' + (L.sort === v ? 'active' : '') + '">' + l + '</button>').join('') +
+    '</div>' +
+
+    '<div style="margin-top:18px"><button class="btn ghost" id="sh-reset">Tüm Filtreleri Temizle</button></div>' +
+    '</div>';
+
+  setTimeout(() => { const bd = $('#sh-backdrop'), sh = $('#sh-sheet'); if (bd) bd.classList.add('open'); if (sh) sh.classList.add('open'); }, 30);
+
+  const close = () => {
+    const bd = $('#sh-backdrop'), sh = $('#sh-sheet');
+    if (!bd) return;
+    bd.classList.remove('open'); sh.classList.remove('open');
+    setTimeout(() => { host.innerHTML = ''; }, 280);
+  };
+  $('#sh-close').onclick = close;
+  $('#sh-backdrop').onclick = close;
+
+  host.onclick = (e) => {
+    const el = e.target.closest('[data-f]');
+    if (!el) return;
+    const f = el.getAttribute('data-f');
+    let v = el.getAttribute('data-v');
+    if (f === 'proc') v = parseInt(v);
+    if (f === 'days') v = parseInt(v);
+    L[f] = v; saveFilters();
+    // aynı gruptaki çiplerin aktifliğini güncelle
+    $$('[data-f="' + f + '"]').forEach((x) => x.classList.toggle('active', x === el || (f === 'days' || f === 'sort' ? x.getAttribute('data-v') === String(v) : x === el)));
+    const rb = $('#refresh-btn'); if (rb) rb.classList.add('spin');
+    paintWoList(); renderIfStale(false);
+    const rb2 = $('#refresh-btn'); if (rb2) rb2.classList.remove('spin');
+    if (f === 'proc' || f === 'customer') setTimeout(close, 220);
+  };
+  const cs = $('#cust-search');
+  cs.oninput = () => {
+    const q = trLower(cs.value.trim());
+    $$('[data-f="customer"]').forEach((c) => {
+      if (!c.getAttribute('data-v')) return; // "Tümü" hep açık
+      c.style.display = !q || trLower(c.getAttribute('data-v')).includes(q) ? '' : 'none';
+    });
+  };
+  $('#sh-reset').onclick = () => {
+    L.proc = 0; L.customer = ''; L.days = 0; L.sort = 'new'; saveFilters();
+    close(); L.shown = 25; render(route());
+  };
+}
+
+function activeFilterCount() {
+  let n = 0;
+  if (L.proc) n++;
+  if (L.customer) n++;
+  if (L.days) n++;
+  if (L.sort !== 'new') n++;
+  return n;
 }
 
 function filteredOrders() {
@@ -501,9 +614,35 @@ function filteredOrders() {
   if (L.status) arr = arr.filter((o) => trLower(o.status).startsWith(trLower(L.status).slice(0, 5)));
   if (q) arr = arr.filter((o) =>
     trLower(o.workOrderNumber).includes(q) || trLower(o.productName).includes(q) ||
-    trLower(o.customerName).includes(q) || trLower(o.productCode).includes(q)
+    trLower(o.customerName).includes(q) || trLower(o.productCode).includes(q) ||
+    trLower(o.productCode).replace(/\s/g, '').includes(q.replace(/\s/g, ''))
   );
+  if (L.proc) arr = arr.filter((o) => (o.processes || []).some((p) => p.id === L.proc && (trLower(p.status || 'beklemede') === 'beklemede' || trLower(p.status || '').includes('devam'))));
+  if (L.customer) arr = arr.filter((o) => trLower(String(o.customerName || '').trim()) === trLower(L.customer));
+  if (L.days) {
+    const cut = Date.now() - L.days * 86400000;
+    arr = arr.filter((o) => { const t = new Date(o.createdAt).getTime(); return !isNaN(t) && t >= cut; });
+  }
+  const qy = (o) => qtyOf(o.customerQuantity);
+  const mm = (o) => m2Each(o) * qtyOf(o.customerQuantity);
+  const cmp = {
+    new: (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')),
+    old: (a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')),
+    due: (a, b) => (a.dueDate ? String(a.dueDate) : '9999').localeCompare(b.dueDate ? String(b.dueDate) : '9999'),
+    qty: (a, b) => qy(b) - qy(a),
+    m2: (a, b) => mm(b) - mm(a)
+  }[L.sort] || null;
+  if (cmp) arr = arr.slice().sort(cmp);
   return arr;
+}
+
+function topCustomers(limit = 14) {
+  const m = new Map();
+  for (const o of S.orders) {
+    const c = String(o.customerName || '').trim();
+    if (c) m.set(c, (m.get(c) || 0) + 1);
+  }
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([c]) => c);
 }
 
 function paintWoList() {
@@ -517,13 +656,55 @@ function paintWoList() {
   const more = $('#more-btn'); if (more) more.onclick = () => { L.shown += 25; paintWoList(); };
 }
 
+/* Ölçekli teknik resim (SVG) — en/boy oranında cam çizimi */
+function techDrawing(o) {
+  const W = parseFloat(String(o.width).replace(',', '.')) || 0;
+  const H = parseFloat(String(o.height).replace(',', '.')) || 0;
+  if (!W || !H) return '';
+  // çizim alanı
+  const MAXW = 250, MAXH = 150, PAD = 30; // ölçü çizgileri için pay
+  const availW = MAXW - PAD * 1.6, availH = MAXH - PAD * 1.6;
+  const scale = Math.min(availW / W, availH / H);
+  const gw = Math.max(30, W * scale), gh = Math.max(22, H * scale);
+  const vbW = MAXW + 46, vbH = MAXH + 8;
+  const x0 = (vbW - gw) / 2 - 14, y0 = (vbH - gh) / 2;
+  const ar = 5; // ok ucu
+  const dim = '#5B6B82';
+  return '<svg class="tech-svg" viewBox="0 0 ' + vbW + ' ' + vbH + '" width="' + vbW + '" role="img" aria-label="Teknik resim">' +
+    // cam gövdesi
+    '<defs><linearGradient id="glassg" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="#BFE3F5"/><stop offset="1" stop-color="#8FC6E8"/></linearGradient></defs>' +
+    '<rect x="' + x0 + '" y="' + y0 + '" width="' + gw + '" height="' + gh + '" rx="2" fill="url(#glassg)" stroke="#084F7D" stroke-width="1.6"/>' +
+    // köşe işaretleri
+    '<path d="M' + (x0 + 8) + ' ' + y0 + ' L' + x0 + ' ' + y0 + ' L' + x0 + ' ' + (y0 + 8) + '" fill="none" stroke="#fff" stroke-width="1.4" opacity=".8"/>' +
+    // üst ölçü çizgisi (en)
+    '<line x1="' + x0 + '" y1="' + (y0 - 13) + '" x2="' + (x0 + gw) + '" y2="' + (y0 - 13) + '" stroke="' + dim + '" stroke-width="1"/>' +
+    '<polygon points="' + x0 + ',' + (y0 - 13) + ' ' + (x0 + ar) + ',' + (y0 - 13 - 2.6) + ' ' + (x0 + ar) + ',' + (y0 - 13 + 2.6) + '" fill="' + dim + '"/>' +
+    '<polygon points="' + (x0 + gw) + ',' + (y0 - 13) + ' ' + (x0 + gw - ar) + ',' + (y0 - 13 - 2.6) + ' ' + (x0 + gw - ar) + ',' + (y0 - 13 + 2.6) + '" fill="' + dim + '"/>' +
+    '<line x1="' + x0 + '" y1="' + (y0 - 5) + '" x2="' + x0 + '" y2="' + (y0 - 17) + '" stroke="' + dim + '" stroke-width=".8"/>' +
+    '<line x1="' + (x0 + gw) + '" y1="' + (y0 - 5) + '" x2="' + (x0 + gw) + '" y2="' + (y0 - 17) + '" stroke="' + dim + '" stroke-width=".8"/>' +
+    '<text x="' + (x0 + gw / 2) + '" y="' + (y0 - 18) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#10192B">' + num(W) + ' mm</text>' +
+    // sağ ölçü çizgisi (boy)
+    '<line x1="' + (x0 + gw + 13) + '" y1="' + y0 + '" x2="' + (x0 + gw + 13) + '" y2="' + (y0 + gh) + '" stroke="' + dim + '" stroke-width="1"/>' +
+    '<polygon points="' + (x0 + gw + 13) + ',' + y0 + ' ' + (x0 + gw + 13 - 2.6) + ',' + (y0 + ar) + ' ' + (x0 + gw + 13 + 2.6) + ',' + (y0 + ar) + '" fill="' + dim + '"/>' +
+    '<polygon points="' + (x0 + gw + 13) + ',' + (y0 + gh) + ' ' + (x0 + gw + 13 - 2.6) + ',' + (y0 + gh - ar) + ' ' + (x0 + gw + 13 + 2.6) + ',' + (y0 + gh - ar) + '" fill="' + dim + '"/>' +
+    '<line x1="' + (x0 + gw + 5) + '" y1="' + y0 + '" x2="' + (x0 + gw + 17) + '" y2="' + y0 + '" stroke="' + dim + '" stroke-width=".8"/>' +
+    '<line x1="' + (x0 + gw + 5) + '" y1="' + (y0 + gh) + '" x2="' + (x0 + gw + 17) + '" y2="' + (y0 + gh) + '" stroke="' + dim + '" stroke-width=".8"/>' +
+    '<text x="' + (x0 + gw + 17) + '" y="' + (y0 + gh / 2) + '" text-anchor="start" dominant-baseline="middle" font-size="11.5" font-weight="700" fill="#10192B" transform="rotate(90 ' + (x0 + gw + 17) + ' ' + (y0 + gh / 2) + ')">' + num(H) + ' mm</text>' +
+    '</svg>';
+}
+
 function viewEmirDetay(id) {
   const o = S.byId.get(id);
   if (!o) return '<div class="wrap"><div class="empty"><div class="e-t">İş emri bulunamadı</div></div><div class="btn ghost" data-go="#/emirler" style="text-align:center">Listeye dön</div></div>';
   const procs = (o.processes || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const st = trLower(o.status);
+  const reopened = String(o.isReopenedFromShortfall) === 'true';
   const badge = st.startsWith('tamamland') ? '<span class="badge tamamlandi">Tamamlandı</span>' : st.startsWith('iptal') ? '<span class="badge iptal">İptal</span>' : '<span class="badge aktif">Aktif</span>';
   const q = qtyOf(o.customerQuantity);
+  const W = parseFloat(String(o.width).replace(',', '.')) || 0;
+  const H = parseFloat(String(o.height).replace(',', '.')) || 0;
+
   const steps = procs.map((p) => {
     const ps = trLower(p.status || 'beklemede');
     const cls = ps.startsWith('tamamland') ? 'done' : ps.includes('devam') ? 'run' : '';
@@ -542,25 +723,48 @@ function viewEmirDetay(id) {
   }).join('');
 
   const kv = (k, v) => '<div class="kv"><div class="k">' + k + '</div><div class="v">' + (v || '—') + '</div></div>';
+  const singleCode = String((o.moldCodes && o.moldCodes.single && o.moldCodes.single.code) || o.productCode || '').trim();
+  const singleShelf = String((o.moldCodes && o.moldCodes.single && o.moldCodes.single.shelf) || o.singleShelfLocation || '').trim();
+
   return '<div class="wrap">' +
-    '<div class="detail-head"><span class="wo-no" style="font-size:16px">#' + esc(o.workOrderNumber) + '</span>' + badge + '</div>' +
+    '<div class="detail-head"><span class="wo-no" style="font-size:16px">#' + esc(o.workOrderNumber) + '</span>' + badge + (reopened ? '<span class="badge reopened">Eksik Adetten Açıldı</span>' : '') + '</div>' +
     '<div style="font-size:15px;font-weight:700;margin:8px 0 12px;line-height:1.35">' + esc((o.productName || '').trim()) + '</div>' +
+
+    '<div class="sec-title">Teknik Resim</div>' +
+    '<div class="card tech-card">' +
+    '<div class="tech-svg-wrap">' + (techDrawing(o) || '<div class="empty" style="padding:10px"><div class="e-t">Ölçü bilgisi yok</div></div>') + '</div>' +
+    '<div class="tech-specs">' +
+    '<div class="ts"><b>' + (W ? num(W) : '—') + '×' + (H ? num(H) : '—') + '</b><span>Ölçü (mm)</span></div>' +
+    '<div class="ts"><b>' + esc((o.thickness || '').trim() || '—') + '</b><span>Kalınlık</span></div>' +
+    '<div class="ts"><b>' + esc((o.color || '').trim() || '—') + '</b><span>Renk</span></div>' +
+    '<div class="ts"><b>' + m2fmt(m2Each(o) * q) + '</b><span>m² (toplam)</span></div>' +
+    '</div>' +
+    '<div style="margin-top:8px;font-size:12px;color:var(--text-2);text-align:center">Ada ölçüsü: ' + m2fmt(m2Each(o)) + ' m² × ' + num(q) + ' adet</div>' +
+    '</div>' +
+
+    '<div class="sec-title">Teknik ve Künye Bilgileri</div>' +
     '<div class="card"><div class="kv-grid">' +
     kv('Müşteri', esc((o.customerName || '').trim())) +
     kv('Sipariş Adedi', num(q) + ' adet') +
-    kv('Alan', m2fmt(m2Each(o) * q) + ' m²') +
-    kv('Ölçü', esc(String(o.width || '').trim()) + ' × ' + esc(String(o.height || '').trim()) + ' mm') +
-    kv('Kalınlık', esc((o.thickness || '').trim())) +
-    kv('Renk', esc((o.color || '').trim())) +
     kv('Ürün Kodu', esc(String(o.productCode || '').trim())) +
-    kv('Raf Lokasyonu', esc((o.singleShelfLocation || '').trim())) +
+    kv('İş Form No', esc(String(o.orderFormNumber || '').trim())) +
+    kv('2. Ürün Kodu', esc(String(o.secondProductCode || '').trim())) +
+    kv('2. Raf', esc(String(o.secondShelfLocation || '').trim())) +
+    kv('1. Raf', esc(String(o.firstShelfLocation || '').trim())) +
     kv('Sipariş Tarihi', o.orderDate ? dateFullTR(o.orderDate) : '—') +
     kv('Termin', o.dueDate ? dateFullTR(o.dueDate) : '—') +
     kv('Oluşturan', esc(o.createdBy)) +
     kv('Oluşturma', o.createdAt ? dateFullTR(o.createdAt) + ' ' + timeTR(o.createdAt) : '—') +
+    kv('Son Güncelleme', o.updatedAt ? dateFullTR(o.updatedAt) + ' ' + timeTR(o.updatedAt) : '—') +
     '</div>' +
     (o.additionalInfo && String(o.additionalInfo).trim() ? '<div style="margin-top:12px;padding:9px 11px;border-radius:9px;background:var(--card-2);font-size:13px;color:var(--text-2)"><b style="color:var(--text)">Not:</b> ' + esc(String(o.additionalInfo).trim()) + '</div>' : '') +
     '</div>' +
+
+    '<div class="sec-title">Kalıp ve Raf</div>' +
+    '<div class="card" id="mold-card">' +
+    (singleCode ? '<div class="mold-row"><div class="mr-ico">' + I.mold + '</div><div class="mr-main"><div class="mr-t">' + esc(singleCode) + '</div><div class="mr-s" id="mold-desc">Kalıp kodu · yükleniyor…</div></div>' + (singleShelf ? '<span class="badge aktif">Raf ' + esc(singleShelf) + '</span>' : '') + '</div>' : '<div class="empty" style="padding:12px"><div class="e-t">Kalıp kodu yok</div></div>') +
+    '</div>' +
+
     '<div class="sec-title">Proses Akışı</div>' +
     '<div class="card"><div class="stepper">' + (steps || '<div class="empty" style="padding:14px"><div class="e-t">Proses tanımı yok</div></div>') + '</div></div>' +
     '</div>';
@@ -620,10 +824,16 @@ function viewAyarlar() {
     '<div class="setrow"><div><div class="sl">Yedek Yenileme Aralığı</div><div class="sd">WebSocket yoksa bu sıklıkla yenilenir</div></div><select id="set-poll" style="padding:8px 10px;border-radius:9px;border:1px solid var(--border-strong);background:var(--card);color:var(--text);font-weight:700">' + [10, 20, 30, 60].map((s) => '<option value="' + s + '" ' + (cfg.pollSec == s ? 'selected' : '') + '>' + s + ' sn</option>').join('') + '</select></div>' +
     '</div>' +
 
-    '<div class="sec-title">Görünüm</div>' +
-    '<div class="card"><div class="seg" id="theme-seg">' +
-    ['auto|Sistem', 'light|Açık', 'dark|Koyu'].map((x) => { const [v, l] = x.split('|'); return '<button data-theme-v="' + v + '" class="' + (cfg.theme === v ? 'active' : '') + '">' + l + '</button>'; }).join('') +
-    '</div></div>' +
+    '<div class="sec-title">Uzaktan Erişim (Her Ağdan)</div>' +
+    '<div class="card" style="font-size:13px;line-height:1.65;color:var(--text-2)">' +
+    '<div style="font-weight:700;color:var(--text);margin-bottom:6px">Fabrika dışından bağlanmak için:</div>' +
+    '1. Üretim sunucusu makinesine (192.168.1.200) <b>ngrok</b> kurun (ücretsiz): <b>dashboard.ngrok.com</b><br>' +
+    '2. Ücretsiz hesap açın, <b>statik domaine</b> sahip olun (ör: <b>sizin-adiniz.ngrok-free.app</b>)<br>' +
+    '3. Sunucu makinesinde çalıştırın: <b>ngrok http --url=sizin-adiniz.ngrok-free.app 3001</b><br>' +
+    '4. Bu uygulamada Sunucu Adresi olarak <b>https://sizin-adiniz.ngrok-free.app</b> yazıp kaydedin<br><br>' +
+    '<div class="banner warn" style="margin:0">' + I.alert + '<div><b>Güvenlik:</b> Sistemde sunucu tarafı oturum koruması yok. Tünel, üretim verisini internete açar; sadece ihtiyacınız varken kullanın.</div></div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-top:8px">Fabrika Wi-Fi içindeyseniz tünel gerekmez; LAN adresi (http://192.168.1.200:3001) daha hızlıdır.</div>' +
+    '</div>' +
 
     '<div class="sec-title">Kurulum — Ana Ekrana Ekle</div>' +
     '<div class="card">' +
@@ -664,11 +874,26 @@ function afterRender(r) {
     if (inp) {
       let deb;
       inp.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { L.q = inp.value; L.shown = 25; paintWoList(); }, 220); };
-      $$('.chip').forEach((c) => c.onclick = () => {
-        L.status = c.getAttribute('data-status'); L.shown = 25;
-        $$('.chip').forEach((x) => x.classList.toggle('active', x === c));
+      $$('.chip[data-status]').forEach((c) => c.onclick = () => {
+        L.status = c.getAttribute('data-status'); L.shown = 25; saveFilters();
+        $$('.chip[data-status]').forEach((x) => x.classList.toggle('active', x === c));
         paintWoList();
       });
+    }
+    const fb = $('#filter-btn');
+    if (fb) fb.onclick = openFilterSheet;
+  }
+
+  if (r.name === 'emir') {
+    // kalıphane açıklamasını canlı çek
+    const o = S.byId.get(r.id);
+    const el = $('#mold-desc');
+    if (o && el) {
+      const code = String((o.moldCodes && o.moldCodes.single && o.moldCodes.single.code) || o.productCode || '').trim();
+      moldInfo(code).then((info) => {
+        if (!el.isConnected) return;
+        el.textContent = info && info.description ? info.description : 'Kalıp kodu';
+      }).catch(() => { if (el.isConnected) el.textContent = 'Kalıp kodu'; });
     }
   }
 
@@ -699,7 +924,6 @@ function afterRender(r) {
     };
     $('#set-live').onchange = (e) => { cfg.live = e.target.checked; saveCfg(); if (cfg.live) { S.wsDead = false; S.wsAttempts = 0; connectWS(); } else { try { S.ws && S.ws.close(); } catch {} stopPolling(); } paintStatus(); };
     $('#set-poll').onchange = (e) => { cfg.pollSec = parseInt(e.target.value); saveCfg(); if (S.pollTimer) { stopPolling(); startPolling(); } };
-    $$('#theme-seg button').forEach((b) => b.onclick = () => { cfg.theme = b.getAttribute('data-theme-v'); saveCfg(); applyTheme(); $$('#theme-seg button').forEach((x) => x.classList.toggle('active', x === b)); });
     $('#set-demo').onchange = (e) => { cfg.demo = e.target.checked; saveCfg(); reboot(); };
     $('#full-refresh').onclick = () => { if (cfg.demo) { setOrders(S.orders, false); toast('Yenilendi'); } else { S.processes = []; refreshREST(false); } };
     const slot = $('#install-slot');
@@ -764,7 +988,6 @@ function reboot() {
 }
 
 async function boot() {
-  applyTheme();
   try { render(route()); } catch (err) { console.error('ilk render:', err); window.__utmErrs.push('boot-render: ' + err.message); }
   window.addEventListener('hashchange', () => { S.hiddenUpdate = false; render(route()); window.scrollTo(0, 0); });
 

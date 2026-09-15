@@ -30,26 +30,6 @@
   --tabbar-h: 62px;
 }
 
-html[data-theme="dark"] {
-  --bg: #0A1220;
-  --card: #121D30;
-  --card-2: #0F1828;
-  --border: #20304A;
-  --border-strong: #2C3F5E;
-  --text: #E7EEF8;
-  --text-2: #9FB0C7;
-  --muted: #6E7F98;
-
-  --ok: #34B371;   --ok-soft: rgba(52,179,113,.15);
-  --danger: #E8696B; --danger-soft: rgba(232,105,107,.14);
-  --warn: #E9A23B; --warn-soft: rgba(233,162,59,.15);
-  --info: #6BA6FF; --info-soft: rgba(107,166,255,.14);
-  --slate: #8DA0BB; --slate-soft: rgba(141,160,187,.16);
-
-  --shadow-1: 0 1px 2px rgba(0,0,0,.35);
-  --shadow-2: 0 6px 20px rgba(0,0,0,.45);
-}
-
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
@@ -286,7 +266,6 @@ html, body {
 }
 .tab svg { width: 22px; height: 22px; }
 .tab.active { color: var(--brand-2); background: var(--info-soft); }
-html[data-theme="dark"] .tab.active { color: #7CC0FF; }
 
 /* Form / ayarlar */
 .field { margin-bottom: 14px; }
@@ -430,3 +409,114 @@ html[data-theme="dark"] .tab.active { color: #7CC0FF; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ============================================================
+   v1.1 — Filtre paneli, teknik resim, kalıp kartı
+   ============================================================ */
+
+/* Filtre çubuğu (arama + filtre düğmesi) */
+.filter-row { display: flex; gap: 9px; align-items: center; }
+.filter-row .searchbar { flex: 1; }
+.filterbtn {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 11px 13px; border-radius: 13px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--border);
+  box-shadow: var(--shadow-1); color: var(--text-2);
+  font-size: 13px; font-weight: 700; font-family: inherit;
+  transition: transform .12s ease;
+}
+.filterbtn:active { transform: scale(.95); }
+.filterbtn svg { width: 17px; height: 17px; }
+.filterbtn.has { border-color: var(--brand-2); color: var(--brand-2); background: var(--info-soft); }
+.filterbtn .cnt {
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--brand); color: #fff; font-size: 11px; font-weight: 800;
+}
+
+/* Alt panel (bottom sheet) */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(10, 18, 32, .45);
+  opacity: 0; transition: opacity .2s ease;
+}
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  background: var(--bg);
+  border-radius: 22px 22px 0 0;
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  max-height: 82vh; overflow-y: auto;
+  transform: translateY(100%); transition: transform .25s cubic-bezier(.32,.72,.35,1);
+  box-shadow: 0 -8px 40px rgba(10,18,32,.25);
+}
+.sheet.open { transform: translateY(0); }
+.sheet-backdrop.open { opacity: 1; }
+.sheet-grab { width: 38px; height: 4px; border-radius: 999px; background: var(--border-strong); margin: 2px auto 12px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.sheet-head h3 { margin: 0; font-size: 16.5px; letter-spacing: -.2px; }
+.sheet-close {
+  width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text-2); font-size: 16px; font-weight: 700;
+  display: grid; place-items: center; cursor: pointer;
+}
+.sheet .sec-title { margin: 16px 0 8px; }
+.sheet .card { margin-bottom: 10px; }
+
+/* Chip ızgarası (panel içi, kaydırmasız sarma) */
+.chip-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip-wrap .chip { border-radius: 10px; padding: 8px 12px; }
+
+/* Panel içi arama (müşteri) */
+.mini-search {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px; border-radius: 11px; margin-bottom: 9px;
+  border: 1px solid var(--border-strong); background: var(--card);
+}
+.mini-search svg { width: 15px; height: 15px; color: var(--muted); }
+.mini-search input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 14px; color: var(--text); min-width: 0; }
+
+/* İş emri kartı: proses noktaları */
+.proc-dots { display: flex; align-items: center; gap: 4px; margin-top: 9px; flex-wrap: wrap; }
+.proc-dots .pd {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700; color: var(--text-2);
+  padding: 2.5px 7px; border-radius: 6px;
+}
+.pd i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.pd.done { background: var(--ok-soft); color: var(--ok); } .pd.done i { background: var(--ok); }
+.pd.run { background: var(--warn-soft); color: var(--warn); } .pd.run i { background: var(--warn); }
+.pd.pend { background: var(--slate-soft); color: var(--slate); } .pd.pend i { background: var(--slate); }
+
+/* Teknik resim kartı */
+.tech-card { padding: 14px; }
+.tech-svg-wrap { display: grid; place-items: center; padding: 4px 0 2px; }
+.tech-svg { max-width: 100%; height: auto; }
+.tech-specs {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px;
+}
+.tech-specs .ts {
+  text-align: center; padding: 8px 4px; border-radius: 10px;
+  background: var(--card-2); border: 1px solid var(--border);
+}
+.tech-specs .ts b { display: block; font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }
+.tech-specs .ts span { font-size: 10px; color: var(--text-2); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+
+/* Kalıp satırları */
+.mold-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 11px; margin-top: 8px;
+  background: var(--card-2); border: 1px solid var(--border);
+}
+.mold-row .mr-ico {
+  width: 34px; height: 34px; border-radius: 9px; flex: none;
+  display: grid; place-items: center;
+  background: var(--info-soft); color: var(--brand-2);
+}
+.mold-row .mr-ico svg { width: 17px; height: 17px; }
+.mold-row .mr-main { flex: 1; min-width: 0; }
+.mold-row .mr-t { font-size: 13.5px; font-weight: 800; letter-spacing: .2px; }
+.mold-row .mr-s { font-size: 12px; color: var(--text-2); margin-top: 1px; }
+.mold-row .badge { flex: none; }
+
+/* Rozet: eksik adetten açıldı */
+.badge.reopened { background: var(--warn-soft); color: var(--warn); }

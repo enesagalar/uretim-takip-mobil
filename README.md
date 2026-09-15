@@ -27,21 +27,31 @@ uygulamanın LAN sürümünü** kullanın:
 > Not: Node kurmak istemezseniz klasörü üretim sunucusunun (192.168.1.200) statik dosya klasörüne
 > kopyalayıp `http://192.168.1.200:3001/mobil/` olarak da açabilirsiniz.
 
-## Kurulum — İnternetten erişim (GitHub Pages)
+## Her Ağdan Erişim (Fabrika Dışı — PC'niz Kapalıyken)
 
-Hazır adres: **https://enesagalar.github.io/uretim-takip-mobil/**
+Uygulama HTTPS üzerinde yayınlandığı için, iç ağdaki `http://192.168.1.200:3001` adresine tarayıcılar
+erişime izin vermez. Çözüm: üretim sunucusu makinesine (192.168.1.200 — hep açık olan makine)
+**ücretsiz ngrok tüneli** kurmak. Tünel sunucu makinesinde çalıştığı sürece **sizin PC'nizin açık
+olmasına gerek yoktur**; telefon mobil veriyle bile bağlanır.
 
-Bu adres HTTPS olduğu için tarayıcı, `http://192.168.1.200:3001` gibi iç ağ HTTP adreslerine erişimi
-engeller (güvenlik kuralı). Bu sürümü gerçek veriyle kullanmak için iki yol vardır:
+1. **ngrok'u ücretsiz hesapla alın**: https://dashboard.ngrok.com/signup
+2. Ücretsiz hesabınıza tanımlı **statik domaine** sahip olunrsunuz (ör. `sizin-adiniz.ngrok-free.app`).
+3. Üretim sunucusu makinesine (192.168.1.200) ngrok'u indirin: https://ngrok.com/download
+4. Authtoken'ı bir kez girin: `ngrok config add-authtoken TOKENINIZ`
+5. Tüneli başlatın: `ngrok http --url=sizin-adiniz.ngrok-free.app 3001`
+   (Windows'ta otomatik başlatma için bu komutu bir `.bat` dosyasına koyup "Başlangıç" klasörüne ekleyin.)
+6. Telefonda uygulamayı açın → **Ayarlar → Sunucu Adresi** → `https://sizin-adiniz.ngrok-free.app` → **Kaydet & Bağlan**.
 
-1. **Telefon fabrika Wi-Fi'ındaysa**: Ayarlar → Bağlantı kısmından sunucu adresini `http://…` girseniz
-   bile tarayıcı engeller. Bu durumda yukarıdaki LAN sürümünü kullanın.
-2. **Dışarıdan erişim**: Sunucuyu güvenli bir tünel (ör. Cloudflare Tunnel) veya VPN ile HTTPS üzerinden
-   yayınlayıp adresi Ayarlar'a yazmak gerekir.
-   ⚠️ **Dikkat**: Sistemde sunucu tarafı oturum doğrulaması yok; tünel açmak üretim verisini
-   internete exposed eder. Sadece güvenilir bir tünel/VPN çözümüyle ve bilinçli olarak yapın.
+Uygulama ngrok için gerekli başlığı (`ngrok-skip-browser-warning`) otomatik ekler; WebSocket (wss) desteği hazırdır.
+Bu kurulum test edilmiştir: HTTPS tünel üzerinden REST + WebSocket canlı bağlantı doğrulandı.
 
-Demo verilerle denemek için: Ayarlar → Veri → Demo Kipi.
+⚠️ **Güvenlik uyarısı**: Sisteminizde sunucu tarafı oturum doğrulaması yoktur (giriş ekranı yalnızca
+tarayıcı tarafındadır). Tünel açıkken üretim verisi bu statik adres üzerinden internete açık olur.
+Adresi paylaşmayın; tüneli ihtiyaç olmadığı dönemde kapatın. Daha katı çözüm isterseniz: Tailscale/ZeroTier
+(kapalı VPN ağı, sadece üye cihazlar) veya Cloudflare Tunnel + alan adı + erişim politikası.
+
+**Fabrika Wi-Fi içindeyseniz tünel gerekmez** — LAN adresi (`http://192.168.1.200:3001`) veya LAN
+sürümü daha hızlıdır. Uygulama iki adres arasında Ayarlar'dan tek dokunuşla geçer.
 
 ## Geliştirme Notları
 
