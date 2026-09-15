@@ -1,5 +1,5 @@
 /* Ekol Glass Üretim Takip — Service Worker */
-const VERSION = 'utm-v1.3.1';
+const VERSION = 'utm-v1.3.2';
 const SHELL = [
   './',
   './index.html',
@@ -32,9 +32,9 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.includes('/api/') || url.pathname.endsWith('/tunnel.json') || url.origin !== location.origin) return;
 
   if (e.request.mode === 'navigate') {
-    // Sayfa: ağ önce, yoksa önbellek
+    // Sayfa: ağ önce (HTTP önbelleğini de aş), düşerse önbellek
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'reload' })
         .then((res) => { caches.open(VERSION).then((c) => c.put('./index.html', res.clone())); return res; })
         .catch(() => caches.match('./index.html'))
     );
