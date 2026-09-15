@@ -520,3 +520,13 @@ html, body {
 
 /* Rozet: eksik adetten açıldı */
 .badge.reopened { background: var(--warn-soft); color: var(--warn); }
+
+/* Aktif filtre çipleri (liste üstü) */
+.afchips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }
+.afchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: 999px; cursor: pointer;
+  background: var(--info-soft); color: var(--brand-2);
+  font-size: 12.5px; font-weight: 700; border: 1px solid color-mix(in srgb, var(--brand-2) 25%, transparent);
+}
+.afchip b { font-weight: 800; opacity: .7; }

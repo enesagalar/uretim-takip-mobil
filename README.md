@@ -53,6 +53,29 @@ Adresi paylaşmayın; tüneli ihtiyaç olmadığı dönemde kapatın. Daha katı
 **Fabrika Wi-Fi içindeyseniz tünel gerekmez** — LAN adresi (`http://192.168.1.200:3001`) veya LAN
 sürümü daha hızlıdır. Uygulama iki adres arasında Ayarlar'dan tek dokunuşla geçer.
 
+## Hızlı Bağlantı Parametreleri
+
+Uygulama adresine `?server=` ekleyerek sunucu adresini tek dokunuşla ayarlayabilirsiniz:
+
+```
+https://enesagalar.github.io/uretim-takip-mobil/?server=https://TUNEL-ADRESINIZ
+```
+
+Bağlantı açıldığında adres kaydedilir; sonra normal kullanıma devam edilir. `?demo=1` demo kipini açar.
+
+## Teknik Resimler (PDF)
+
+Teknik resim dosyaları web üzerinden yayımlanmadığı sürece uygulama bunlara erişemez. Erişilebilir
+bir adres varsa (ör. sunucuda PDF klasörü paylaşıma açıldığında):
+**Ayarlar → Teknik Resim Adres Şablonu** alanına `{kod}` yer tutucusuyla şablon girin:
+
+```
+http://192.168.1.200:3001/teknik/{kod}.pdf
+```
+
+Uygulama her iş emrinde ürün/kalıp kodu için dosyayı kontrol eder; varsa detay ekranında
+PDF düğmesi + sayfa içi görüntüleyici gösterir (olmayan ürünlerde hiçbir şey gösterilmez).
+
 ## Geliştirme Notları
 
 - Bağımlılık yok; saf HTML/CSS/JS. `server.js` tek dosyalık statik sunucu.

@@ -59,9 +59,19 @@ const I = {
 
 /* ---------- Yapılandırma & Durum ---------- */
 const LS_KEY = 'utm_cfg_v1';
-const DEFAULT_CFG = { server: 'http://192.168.1.200:3001', live: true, pollSec: 20, demo: false };
+const DEFAULT_CFG = { server: 'http://192.168.1.200:3001', live: true, pollSec: 20, demo: false, pdfTpl: '' };
 let cfg = (() => { try { return { ...DEFAULT_CFG, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}') }; } catch { return { ...DEFAULT_CFG }; } })();
 const saveCfg = () => localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+
+/* ?server=… bağlantı parametresi: tek dokunuşla sunucu adresi ayarlar */
+(() => {
+  try {
+    const q = new URLSearchParams(location.search);
+    const sv = (q.get('server') || '').trim().replace(/\/+$/, '');
+    if (/^https?:\/\/.+/.test(sv)) { cfg.server = sv; cfg.demo = false; saveCfg(); }
+    else if (q.get('demo') === '1') { cfg.demo = true; saveCfg(); }
+  } catch { /* yoksay */ }
+})();
 
 const S = {
   orders: [], byId: new Map(), processes: [],
@@ -94,6 +104,40 @@ async function api(path, timeoutMs = 12000) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
   } finally { clearTimeout(t); }
+}
+
+/* Teknik resim PDF'i: Ayarlar'daki adres şablonundan üretilir ({kod} → ürün/kalıp kodu).
+   İlk kullanımda şablon doğrulanır, sonuç önbelleğe alınır. */
+const pdfProbe = new Map(); // url -> true/false
+function techPdfURL(o) {
+  const tpl = (cfg.pdfTpl || '').trim();
+  if (!tpl || !tpl.includes('{kod}')) return null;
+  const code = String((o.moldCodes && o.moldCodes.single && o.moldCodes.single.code) || o.productCode || '').trim();
+  if (!code) return null;
+  try { return new URL(tpl.replace('{kod}', encodeURIComponent(code))).href; } catch { return null; }
+}
+async function techPdfExists(o) {
+  const url = techPdfURL(o);
+  if (!url) return null;
+  if (pdfProbe.has(url)) return pdfProbe.get(url) ? url : null;
+  let ok = false;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 6000);
+    const r = await fetch(url, { signal: ctl.signal, headers: { 'ngrok-skip-browser-warning': 'utm' } });
+    clearTimeout(t);
+    if (r.ok) {
+      const ct = r.headers.get('content-type') || '';
+      if (ct.includes('pdf')) ok = true;
+      else if (ct.includes('html')) ok = false; // SPA fallback tuzağı
+      else {
+        const buf = await r.clone().slice(0, 5).arrayBuffer();
+        ok = new TextDecoder().decode(buf).includes('%PDF');
+      }
+    }
+  } catch { ok = false; }
+  pdfProbe.set(url, ok);
+  return ok ? url : null;
 }
 
 /* Kalıphane bilgisi (ürün kodu → raf/açıklama), önbellekli */
@@ -617,11 +661,13 @@ function filteredOrders() {
     trLower(o.customerName).includes(q) || trLower(o.productCode).includes(q) ||
     trLower(o.productCode).replace(/\s/g, '').includes(q.replace(/\s/g, ''))
   );
+  // proses filtresi: sunucu (GET /api/work-orders?process=ID) ile aynı semantik —
+  // o prosesi BEKLEYEN veya DEVAM EDEN iş emirleri (emir durumu ne olursa olsun)
   if (L.proc) arr = arr.filter((o) => (o.processes || []).some((p) => p.id === L.proc && (trLower(p.status || 'beklemede') === 'beklemede' || trLower(p.status || '').includes('devam'))));
   if (L.customer) arr = arr.filter((o) => trLower(String(o.customerName || '').trim()) === trLower(L.customer));
   if (L.days) {
-    const cut = Date.now() - L.days * 86400000;
-    arr = arr.filter((o) => { const t = new Date(o.createdAt).getTime(); return !isNaN(t) && t >= cut; });
+    const cut = dayKey(new Date(Date.now() - (L.days - 1) * 86400000));
+    arr = arr.filter((o) => String(o.orderDate || '') >= cut);
   }
   const qy = (o) => qtyOf(o.customerQuantity);
   const mm = (o) => m2Each(o) * qtyOf(o.customerQuantity);
@@ -645,55 +691,39 @@ function topCustomers(limit = 14) {
   return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([c]) => c);
 }
 
+function activeFilterChips() {
+  const out = [];
+  if (L.proc) out.push({ k: 'proc', l: procDisplayName(L.proc) });
+  if (L.customer) out.push({ k: 'customer', l: L.customer });
+  if (L.days) out.push({ k: 'days', l: L.days === 1 ? 'Bugün' : L.days + ' Gün' });
+  const sortLbls = { new: 'Yeni→Eski', old: 'Eski→Yeni', due: 'Termin', qty: 'Adet', m2: 'm²' };
+  if (L.sort && L.sort !== 'new') out.push({ k: 'sort', l: 'Sıra: ' + (sortLbls[L.sort] || L.sort) });
+  if (L.q.trim()) out.push({ k: 'q', l: '“' + L.q.trim().slice(0, 18) + '”' });
+  return out;
+}
+
 function paintWoList() {
   const host = $('#wo-list'); if (!host) return;
   const arr = filteredOrders();
   const slice = arr.slice(0, L.shown);
+  const af = activeFilterChips();
   host.innerHTML =
     '<div class="sec-title" style="margin-top:2px">' + num(arr.length) + ' iş emri</div>' +
-    (slice.map(woCard).join('') || '<div class="empty"><div class="e-t">Sonuç bulunamadı</div><div style="font-size:12.5px;margin-top:4px">Farklı bir arama deneyin</div></div>') +
+    (af.length ? '<div class="afchips">' + af.map((f) =>
+      '<span class="afchip" data-rm="' + f.k + '">' + esc(f.l) + ' <b>✕</b></span>').join('') + '</div>' : '') +
+    (slice.map(woCard).join('') || '<div class="empty"><div class="e-t">Sonuç bulunamadı</div><div style="font-size:12.5px;margin-top:4px">Farklı bir arama veya filtre deneyin</div></div>') +
     (arr.length > L.shown ? '<button class="loadmore" id="more-btn">Daha fazla göster (' + num(arr.length - L.shown) + ')</button>' : '');
   const more = $('#more-btn'); if (more) more.onclick = () => { L.shown += 25; paintWoList(); };
+  $$('.afchip', host).forEach((c) => c.onclick = () => {
+    const k = c.getAttribute('data-rm');
+    if (k === 'q') { L.q = ''; const si = $('#wo-search'); if (si) si.value = ''; }
+    else if (k === 'sort') L.sort = 'new';
+    else L[k] = k === 'proc' ? 0 : k === 'days' ? 0 : '';
+    saveFilters(); L.shown = 25; renderIfStale(false);
+  });
 }
 
-/* Ölçekli teknik resim (SVG) — en/boy oranında cam çizimi */
-function techDrawing(o) {
-  const W = parseFloat(String(o.width).replace(',', '.')) || 0;
-  const H = parseFloat(String(o.height).replace(',', '.')) || 0;
-  if (!W || !H) return '';
-  // çizim alanı
-  const MAXW = 250, MAXH = 150, PAD = 30; // ölçü çizgileri için pay
-  const availW = MAXW - PAD * 1.6, availH = MAXH - PAD * 1.6;
-  const scale = Math.min(availW / W, availH / H);
-  const gw = Math.max(30, W * scale), gh = Math.max(22, H * scale);
-  const vbW = MAXW + 46, vbH = MAXH + 8;
-  const x0 = (vbW - gw) / 2 - 14, y0 = (vbH - gh) / 2;
-  const ar = 5; // ok ucu
-  const dim = '#5B6B82';
-  return '<svg class="tech-svg" viewBox="0 0 ' + vbW + ' ' + vbH + '" width="' + vbW + '" role="img" aria-label="Teknik resim">' +
-    // cam gövdesi
-    '<defs><linearGradient id="glassg" x1="0" y1="0" x2="1" y2="1">' +
-    '<stop offset="0" stop-color="#BFE3F5"/><stop offset="1" stop-color="#8FC6E8"/></linearGradient></defs>' +
-    '<rect x="' + x0 + '" y="' + y0 + '" width="' + gw + '" height="' + gh + '" rx="2" fill="url(#glassg)" stroke="#084F7D" stroke-width="1.6"/>' +
-    // köşe işaretleri
-    '<path d="M' + (x0 + 8) + ' ' + y0 + ' L' + x0 + ' ' + y0 + ' L' + x0 + ' ' + (y0 + 8) + '" fill="none" stroke="#fff" stroke-width="1.4" opacity=".8"/>' +
-    // üst ölçü çizgisi (en)
-    '<line x1="' + x0 + '" y1="' + (y0 - 13) + '" x2="' + (x0 + gw) + '" y2="' + (y0 - 13) + '" stroke="' + dim + '" stroke-width="1"/>' +
-    '<polygon points="' + x0 + ',' + (y0 - 13) + ' ' + (x0 + ar) + ',' + (y0 - 13 - 2.6) + ' ' + (x0 + ar) + ',' + (y0 - 13 + 2.6) + '" fill="' + dim + '"/>' +
-    '<polygon points="' + (x0 + gw) + ',' + (y0 - 13) + ' ' + (x0 + gw - ar) + ',' + (y0 - 13 - 2.6) + ' ' + (x0 + gw - ar) + ',' + (y0 - 13 + 2.6) + '" fill="' + dim + '"/>' +
-    '<line x1="' + x0 + '" y1="' + (y0 - 5) + '" x2="' + x0 + '" y2="' + (y0 - 17) + '" stroke="' + dim + '" stroke-width=".8"/>' +
-    '<line x1="' + (x0 + gw) + '" y1="' + (y0 - 5) + '" x2="' + (x0 + gw) + '" y2="' + (y0 - 17) + '" stroke="' + dim + '" stroke-width=".8"/>' +
-    '<text x="' + (x0 + gw / 2) + '" y="' + (y0 - 18) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#10192B">' + num(W) + ' mm</text>' +
-    // sağ ölçü çizgisi (boy)
-    '<line x1="' + (x0 + gw + 13) + '" y1="' + y0 + '" x2="' + (x0 + gw + 13) + '" y2="' + (y0 + gh) + '" stroke="' + dim + '" stroke-width="1"/>' +
-    '<polygon points="' + (x0 + gw + 13) + ',' + y0 + ' ' + (x0 + gw + 13 - 2.6) + ',' + (y0 + ar) + ' ' + (x0 + gw + 13 + 2.6) + ',' + (y0 + ar) + '" fill="' + dim + '"/>' +
-    '<polygon points="' + (x0 + gw + 13) + ',' + (y0 + gh) + ' ' + (x0 + gw + 13 - 2.6) + ',' + (y0 + gh - ar) + ' ' + (x0 + gw + 13 + 2.6) + ',' + (y0 + gh - ar) + '" fill="' + dim + '"/>' +
-    '<line x1="' + (x0 + gw + 5) + '" y1="' + y0 + '" x2="' + (x0 + gw + 17) + '" y2="' + y0 + '" stroke="' + dim + '" stroke-width=".8"/>' +
-    '<line x1="' + (x0 + gw + 5) + '" y1="' + (y0 + gh) + '" x2="' + (x0 + gw + 17) + '" y2="' + (y0 + gh) + '" stroke="' + dim + '" stroke-width=".8"/>' +
-    '<text x="' + (x0 + gw + 17) + '" y="' + (y0 + gh / 2) + '" text-anchor="start" dominant-baseline="middle" font-size="11.5" font-weight="700" fill="#10192B" transform="rotate(90 ' + (x0 + gw + 17) + ' ' + (y0 + gh / 2) + ')">' + num(H) + ' mm</text>' +
-    '</svg>';
-}
-
+/* Ölçü özet kartı + teknik resim PDF görüntüleyici */
 function viewEmirDetay(id) {
   const o = S.byId.get(id);
   if (!o) return '<div class="wrap"><div class="empty"><div class="e-t">İş emri bulunamadı</div></div><div class="btn ghost" data-go="#/emirler" style="text-align:center">Listeye dön</div></div>';
@@ -730,9 +760,8 @@ function viewEmirDetay(id) {
     '<div class="detail-head"><span class="wo-no" style="font-size:16px">#' + esc(o.workOrderNumber) + '</span>' + badge + (reopened ? '<span class="badge reopened">Eksik Adetten Açıldı</span>' : '') + '</div>' +
     '<div style="font-size:15px;font-weight:700;margin:8px 0 12px;line-height:1.35">' + esc((o.productName || '').trim()) + '</div>' +
 
-    '<div class="sec-title">Teknik Resim</div>' +
+    '<div class="sec-title">Teknik Bilgiler</div>' +
     '<div class="card tech-card">' +
-    '<div class="tech-svg-wrap">' + (techDrawing(o) || '<div class="empty" style="padding:10px"><div class="e-t">Ölçü bilgisi yok</div></div>') + '</div>' +
     '<div class="tech-specs">' +
     '<div class="ts"><b>' + (W ? num(W) : '—') + '×' + (H ? num(H) : '—') + '</b><span>Ölçü (mm)</span></div>' +
     '<div class="ts"><b>' + esc((o.thickness || '').trim() || '—') + '</b><span>Kalınlık</span></div>' +
@@ -740,6 +769,7 @@ function viewEmirDetay(id) {
     '<div class="ts"><b>' + m2fmt(m2Each(o) * q) + '</b><span>m² (toplam)</span></div>' +
     '</div>' +
     '<div style="margin-top:8px;font-size:12px;color:var(--text-2);text-align:center">Ada ölçüsü: ' + m2fmt(m2Each(o)) + ' m² × ' + num(q) + ' adet</div>' +
+    '<div id="tech-pdf-slot" style="margin-top:12px"></div>' +
     '</div>' +
 
     '<div class="sec-title">Teknik ve Künye Bilgileri</div>' +
@@ -818,6 +848,7 @@ function viewAyarlar() {
     '<div class="sec-title">Bağlantı</div>' +
     '<div class="card">' +
     '<div class="field" style="margin-bottom:10px"><label>Sunucu Adresi</label><input type="text" id="set-server" value="' + esc(cfg.server) + '" inputmode="url" autocapitalize="off" spellcheck="false"><div class="hint">Örn: http://192.168.1.200:3001 — üretim takip sunucusunun adresi</div></div>' +
+    '<div class="field" style="margin-bottom:10px"><label>Teknik Resim Adres Şablonu (PDF)</label><input type="text" id="set-pdftpl" value="' + esc(cfg.pdfTpl || '') + '" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://sunucu/klasor/{kod}.pdf"><div class="hint">{kod} yerine ürün/kalıp kodu yazılır. Teknik resimler iş emri detayında PDF olarak açılır. Bazı ürünlerde dosya olmayabilir; olmayanlarda düğme çıkmaz.</div></div>' +
     '<div style="display:flex;gap:10px"><button class="btn primary" id="save-server" style="flex:1">Kaydet & Bağlan</button><button class="btn ghost" id="test-server" style="flex:1">Bağlantı Testi</button></div>' +
     '<div id="test-result" style="margin-top:10px"></div>' +
     '<div class="setrow"><div><div class="sl">Canlı Güncelleme (WebSocket)</div><div class="sd">Sunucu değişiklikleri anında yansır</div></div><label class="switch"><input type="checkbox" id="set-live" ' + (cfg.live ? 'checked' : '') + '><span class="track"></span><span class="thumb"></span></label></div>' +
@@ -885,8 +916,8 @@ function afterRender(r) {
   }
 
   if (r.name === 'emir') {
-    // kalıphane açıklamasını canlı çek
     const o = S.byId.get(r.id);
+    // kalıphane açıklamasını canlı çek
     const el = $('#mold-desc');
     if (o && el) {
       const code = String((o.moldCodes && o.moldCodes.single && o.moldCodes.single.code) || o.productCode || '').trim();
@@ -894,6 +925,21 @@ function afterRender(r) {
         if (!el.isConnected) return;
         el.textContent = info && info.description ? info.description : 'Kalıp kodu';
       }).catch(() => { if (el.isConnected) el.textContent = 'Kalıp kodu'; });
+    }
+    // teknik resim PDF'i (adres şablonu tanımlıysa)
+    const slot = $('#tech-pdf-slot');
+    if (o && slot) {
+      const url = techPdfURL(o);
+      if (!url) {
+        slot.innerHTML = '<div class="hint" style="text-align:center">Teknik resim: Ayarlar → “Teknik Resim Adres Şablonu” tanımlanınca burada PDF olarak açılır</div>';
+      } else {
+        slot.innerHTML = '<a class="btn primary" style="text-decoration:none" id="pdf-open" target="_blank" rel="noopener" href="' + esc(url) + '">📄 Teknik Resmi Aç (PDF)</a>';
+        techPdfExists(o).then((u) => {
+          if (!u || !slot.isConnected) return;
+          slot.insertAdjacentHTML('beforeend',
+            '<iframe src="' + esc(u) + '" style="width:100%;height:420px;border:1px solid var(--border);border-radius:12px;margin-top:10px;background:#fff" title="Teknik resim"></iframe>');
+        });
+      }
     }
   }
 
@@ -906,7 +952,11 @@ function afterRender(r) {
     $('#save-server').onclick = () => {
       const v = $('#set-server').value.trim().replace(/\/+$/, '');
       if (!/^https?:\/\/.+/.test(v)) { toast('Geçerli bir adres girin (http://…)'); return; }
-      cfg.server = v; saveCfg(); toast('Kaydedildi, bağlanılıyor…'); reboot();
+      cfg.server = v;
+      const tp = $('#set-pdftpl').value.trim();
+      if (tp && !tp.includes('{kod}')) { toast('PDF şablonunda {kod} eksik'); return; }
+      cfg.pdfTpl = tp; pdfProbe.clear();
+      saveCfg(); toast('Kaydedildi, bağlanılıyor…'); reboot();
     };
     $('#test-server').onclick = async () => {
       const v = $('#set-server').value.trim().replace(/\/+$/, '');
