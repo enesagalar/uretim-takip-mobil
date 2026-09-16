@@ -685,10 +685,10 @@ function viewOzet() {
   return '<div class="wrap">' +
     (isMixedContent() ? '<div class="banner warn">' + I.alert + '<div><b>Güvenli bağlantı kısıtı:</b> HTTPS sayfa üzerinden HTTP sunucuya erişilemiyor. Ayarlar → Kurulum bölümünden LAN sürümünü kullanın.</div></div>' : '') +
     '<div class="kpi-grid">' +
-    '<div class="kpi brand"><div class="kpi-ico">' + I.trendUp + '</div><div class="kpi-label">Bugün Üretim</div><div class="kpi-num" data-count="' + A.outQtyToday + '">0<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.outM2Today) + ' m² · ' + num(A.procDoneToday) + ' proses</div></div>' +
-    '<div class="kpi info"><div class="kpi-ico">' + I.box + '</div><div class="kpi-label">Bugün Açılan</div><div class="kpi-num" data-count="' + A.openedToday + '">0<small>iş emri</small></div><div class="kpi-sub">' + num(A.openedTodayQty) + ' adet sipariş</div></div>' +
-    '<div class="kpi ok"><div class="kpi-ico">' + I.layers + '</div><div class="kpi-label">Aktif İş Emri</div><div class="kpi-num" data-count="' + A.activeCount + '">0</div><div class="kpi-sub">' + num(A.activeQty) + ' adet · ' + m2fmt(A.activeM2) + ' m²</div></div>' +
-    '<div class="kpi ' + (A.scrapQtyToday > 0 ? 'warn' : 'ok') + '"><div class="kpi-ico">' + I.flame + '</div><div class="kpi-label">Bugün Fire</div><div class="kpi-num" data-count="' + A.scrapQtyToday + '">0<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.scrapM2Today) + ' m² · %' + nf1.format(A.scrapPct) + '</div></div>' +
+    '<div class="kpi brand"><div class="kpi-ico">' + I.trendUp + '</div><div class="kpi-label">Bugün Üretim</div><div class="kpi-num" data-count="' + A.outQtyToday + '">' + num(A.outQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.outM2Today) + ' m² · ' + num(A.procDoneToday) + ' proses</div></div>' +
+    '<div class="kpi info"><div class="kpi-ico">' + I.box + '</div><div class="kpi-label">Bugün Açılan</div><div class="kpi-num" data-count="' + A.openedToday + '">' + num(A.openedToday) + '<small>iş emri</small></div><div class="kpi-sub">' + num(A.openedTodayQty) + ' adet sipariş</div></div>' +
+    '<div class="kpi ok"><div class="kpi-ico">' + I.layers + '</div><div class="kpi-label">Aktif İş Emri</div><div class="kpi-num" data-count="' + A.activeCount + '">' + num(A.activeCount) + '</div><div class="kpi-sub">' + num(A.activeQty) + ' adet · ' + m2fmt(A.activeM2) + ' m²</div></div>' +
+    '<div class="kpi ' + (A.scrapQtyToday > 0 ? 'warn' : 'ok') + '"><div class="kpi-ico">' + I.flame + '</div><div class="kpi-label">Bugün Fire</div><div class="kpi-num" data-count="' + A.scrapQtyToday + '">' + num(A.scrapQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.scrapM2Today) + ' m² · %' + nf1.format(A.scrapPct) + '</div></div>' +
     '</div>' +
 
     todaySection(A) +
