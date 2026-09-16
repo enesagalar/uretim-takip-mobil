@@ -1,0 +1,37 @@
+================================================================
+ EKOL GLASS — KALICI TUNEL KURULUMU (ÜRETİM SUNUCUSU MAKİNESİNE)
+================================================================
+
+Bu klasörü üretim sunucusu makinesine (192.168.1.200 — hep açık olan
+bilgisayar) kopyalayın ve "ngrok-kur.bat" dosyasına ÇİFT TIKLAYIN.
+
+Kurulum BİR KEZ yapılır; sonrasında hiçbir şey yapmanız gerekmez:
+
+  ✓ Tünel üretim sunucusunda çalışır — sizin PC'niz KAPALI olsa bile
+  ✓ Adres sabittir (değişmez) — telefonlarda yeniden ayar gerekmez
+  ✓ Windows açılışında otomatik başlar
+  ✓ Mobil uygulama adresi otomatik öğrenir (Ayarlar → adresi girin: sizin-adiniz.ngrok-free.app)
+
+Sizden istenen tek şey (2 dakika, ücretsiz, kredi kartı YOK):
+
+  1. https://dashboard.ngrok.com/signup → e-posta ile ücretsiz hesap açın
+  2. https://dashboard.ngrok.com/get-started/your-authtoken → authtoken kopyalayın
+  3. Kurulum sırasında token + "ekol-glass" gibi bir statik domain seçin
+     (ngrok ücretsiz hesaba 1 statik domain verir: sizin-adiniz.ngrok-free.app)
+
+Kurulum bittikten sonra telefondan:
+  Uygulama → Ayarlar → Gelişmiş → Sunucu Adresi:
+      https://sizin-adiniz.ngrok-free.app     yazıp Kaydet & Bağlan
+  (Ya da bu bağlantıyı tek kez açın:
+   https://enesagalar.github.io/uretim-takip-mobil/?server=https://sizin-adiniz.ngrok-free.app )
+
+----------------------------------------------------------------------------
+ GİZLİLİK/GÜVENLİK: Sistemde sunucu tarafı oturum koruması yoktur.
+ Tünel açıkken üretim verisi seçtiğiniz ngrok adresinden internete açık olur.
+ Adresi kimseyle paylaşmayın; ngrok panelinden (dashboard.ngrok.com) tek
+ tıkla kapatıp açabilirsiniz.
+----------------------------------------------------------------------------
+
+SORULAR:
+ - "node bulunamadı" hatası: https://nodejs.org adresinden Node.js LTS kurun.
+ - Tünel durumunu görmek: http://127.0.0.1:4040 (sunucu makinesinde)

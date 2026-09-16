@@ -20,6 +20,26 @@ const todayKey = () => dayKey(Date.now());
 const dateTR = (s) => { const x = new Date(s); return isNaN(x) ? '—' : x.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }); };
 const dateFullTR = (s) => { const x = new Date(s); return isNaN(x) ? '—' : x.toLocaleDateString('tr-TR'); };
 const timeTR = (s) => { const x = new Date(s); return isNaN(x) ? '' : x.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); };
+const dateTimeTR = (s) => { const x = new Date(s); return isNaN(x) ? '—' : x.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }) + ' ' + timeTR(s); };
+const dateTimeFullTR = (s) => { const x = new Date(s); return isNaN(x) ? '—' : x.toLocaleDateString('tr-TR') + ' ' + timeTR(s); };
+const durTR = (a, b) => {
+  const ms = new Date(b) - new Date(a);
+  if (!(ms > 0)) return '';
+  const m = Math.round(ms / 60000);
+  if (m < 60) return m + ' dk';
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 24) return h + ' sa' + (rm ? ' ' + rm + ' dk' : '');
+  const d = Math.floor(h / 24);
+  return d + ' gün ' + (h % 24) + ' sa';
+};
+/* izlenebilirlik: son 48 sa göreli, sonrası kısa mutlak */
+const relTime = (s) => {
+  const x = new Date(s);
+  if (isNaN(x)) return '—';
+  const ms = Date.now() - x.getTime();
+  if (ms >= 0 && ms < 48 * 3600000) return timeAgo(x.getTime());
+  return dateTimeTR(x);
+};
 const timeAgo = (ts) => {
   if (!ts) return '—';
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
@@ -51,6 +71,7 @@ const I = {
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8z"/></svg>',
+  go: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
   filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/></svg>',
   mold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M12 8v8"/></svg>',
   ruler: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2M4.5 13.5l2 2"/></svg>',
@@ -504,6 +525,7 @@ function route() {
   const parts = h.split('/');
   if (parts[0] === 'emir' && parts[1]) return { name: 'emir', id: parts[1] };
   if (parts[0] === 'proses' && parts[1]) return { name: 'proses', id: parseInt(parts[1]) };
+  if (parts[0] === 'detay' && parts[1]) return { name: 'detay', id: parts[1] };
   if (VIEWS[parts[0]]) return { name: parts[0] };
   return { name: 'ozet' };
 }
@@ -532,17 +554,18 @@ function paintStatus() {
   if (btn) btn.classList.toggle('spin', S.loading);
 }
 
+const DETAY_TITLES = { uretim: 'Bugün Üretim Detayı', acilan: 'Bugün Açılan İş Emirleri', fire: 'Bugün Fire Kayıtları' };
+
 function paintAppbar(r) {
-  const detail = r.name === 'emir' || r.name === 'proses';
-  const titles = detail
-    ? '<div class="titles"><div class="t1">' + (r.name === 'emir' ? 'İş Emri Detayı' : procDisplayName(r.id)) + '</div><div class="t2">Ekol Glass</div></div>'
-    : '<div class="titles"><div class="t1">Üretim Takip</div><div class="t2">Ekol Glass</div></div>';
+  const detail = r.name === 'emir' || r.name === 'proses' || r.name === 'detay';
+  const t1 = r.name === 'emir' ? 'İş Emri Detayı' : r.name === 'proses' ? procDisplayName(r.id) : r.name === 'detay' ? (DETAY_TITLES[r.id] || 'Detay') : 'Üretim Takip';
+  const titles = '<div class="titles"><div class="t1">' + esc(t1) + '</div><div class="t2">Ekol Glass</div></div>';
   $('#appbar').innerHTML =
     (detail ? '<button class="iconbtn" id="back-btn" aria-label="Geri">' + I.back + '</button>' : '<img class="brand-mark" src="icons/icon-192.png" alt="">') +
     titles +
     '<span class="live-pill wait" id="live-pill"><span class="dot"></span>…</span>' +
     '<button class="iconbtn" id="refresh-btn" aria-label="Yenile">' + I.refresh + '</button>';
-  $('#back-btn') && ($('#back-btn').onclick = () => history.length > 1 ? history.back() : go(r.name === 'emir' ? '/emirler' : '/prosesler'));
+  $('#back-btn') && ($('#back-btn').onclick = () => history.length > 1 ? history.back() : go(r.name === 'emir' ? '/emirler' : r.name === 'detay' ? '/ozet' : '/prosesler'));
   $('#refresh-btn').onclick = () => { if (cfg.demo) { setOrders(S.orders, false); toast('Demo yenilendi'); } else refreshREST(false); };
 }
 
@@ -553,7 +576,7 @@ function paintTabbar(r) {
     { id: 'prosesler', lbl: 'Prosesler', ico: I.factory },
     { id: 'ayarlar', lbl: 'Ayarlar', ico: I.gear }
   ];
-  const active = r.name === 'emir' ? 'emirler' : r.name === 'proses' ? 'prosesler' : r.name;
+  const active = r.name === 'emir' ? 'emirler' : r.name === 'proses' ? 'prosesler' : r.name === 'detay' ? 'ozet' : r.name;
   $('#tabbar').innerHTML = tabs.map((t) =>
     '<a class="tab ' + (active === t.id ? 'active' : '') + '" href="#/' + t.id + '" data-tab="' + t.id + '">' + t.ico + '<span>' + t.lbl + '</span></a>'
   ).join('');
@@ -585,6 +608,7 @@ function render(r) {
   if (S.lastRouteKey !== routeKey) {
     S.lastRouteKey = routeKey;
     S.animateNext = true;
+    DS.shown = {};
     v.classList.remove('anim'); void v.offsetWidth; v.classList.add('anim');
   }
   let html = '';
@@ -594,6 +618,7 @@ function render(r) {
     else if (r.name === 'emir') html = viewEmirDetay(r.id);
     else if (r.name === 'prosesler') html = viewProsesler();
     else if (r.name === 'proses') html = viewProsesDetay(r.id);
+    else if (r.name === 'detay') html = viewDetay(r.id);
     else if (r.name === 'ayarlar') html = viewAyarlar();
   } catch (err) {
     console.error('görünüm:', err);
@@ -685,10 +710,10 @@ function viewOzet() {
   return '<div class="wrap">' +
     (isMixedContent() ? '<div class="banner warn">' + I.alert + '<div><b>Güvenli bağlantı kısıtı:</b> HTTPS sayfa üzerinden HTTP sunucuya erişilemiyor. Ayarlar → Kurulum bölümünden LAN sürümünü kullanın.</div></div>' : '') +
     '<div class="kpi-grid">' +
-    '<div class="kpi brand"><div class="kpi-ico">' + I.trendUp + '</div><div class="kpi-label">Bugün Üretim</div><div class="kpi-num" data-count="' + A.outQtyToday + '">' + num(A.outQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.outM2Today) + ' m² · ' + num(A.procDoneToday) + ' proses</div></div>' +
-    '<div class="kpi info"><div class="kpi-ico">' + I.box + '</div><div class="kpi-label">Bugün Açılan</div><div class="kpi-num" data-count="' + A.openedToday + '">' + num(A.openedToday) + '<small>iş emri</small></div><div class="kpi-sub">' + num(A.openedTodayQty) + ' adet sipariş</div></div>' +
-    '<div class="kpi ok"><div class="kpi-ico">' + I.layers + '</div><div class="kpi-label">Aktif İş Emri</div><div class="kpi-num" data-count="' + A.activeCount + '">' + num(A.activeCount) + '</div><div class="kpi-sub">' + num(A.activeQty) + ' adet · ' + m2fmt(A.activeM2) + ' m²</div></div>' +
-    '<div class="kpi ' + (A.scrapQtyToday > 0 ? 'warn' : 'ok') + '"><div class="kpi-ico">' + I.flame + '</div><div class="kpi-label">Bugün Fire</div><div class="kpi-num" data-count="' + A.scrapQtyToday + '">' + num(A.scrapQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.scrapM2Today) + ' m² · %' + nf1.format(A.scrapPct) + '</div></div>' +
+    '<div class="kpi brand" data-go="#/detay/uretim" role="link" aria-label="Bugün üretim detayı"><span class="kpi-go">' + I.go + '</span><div class="kpi-ico">' + I.trendUp + '</div><div class="kpi-label">Bugün Üretim</div><div class="kpi-num" data-count="' + A.outQtyToday + '">' + num(A.outQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.outM2Today) + ' m² · ' + num(A.procDoneToday) + ' proses</div></div>' +
+    '<div class="kpi info" data-go="#/detay/acilan" role="link" aria-label="Bugün açılan iş emirleri"><span class="kpi-go">' + I.go + '</span><div class="kpi-ico">' + I.box + '</div><div class="kpi-label">Bugün Açılan</div><div class="kpi-num" data-count="' + A.openedToday + '">' + num(A.openedToday) + '<small>iş emri</small></div><div class="kpi-sub">' + num(A.openedTodayQty) + ' adet sipariş</div></div>' +
+    '<div class="kpi ok" data-go="#/emirler" role="link" aria-label="Aktif iş emirleri"><span class="kpi-go">' + I.go + '</span><div class="kpi-ico">' + I.layers + '</div><div class="kpi-label">Aktif İş Emri</div><div class="kpi-num" data-count="' + A.activeCount + '">' + num(A.activeCount) + '</div><div class="kpi-sub">' + num(A.activeQty) + ' adet · ' + m2fmt(A.activeM2) + ' m²</div></div>' +
+    '<div class="kpi ' + (A.scrapQtyToday > 0 ? 'warn' : 'ok') + '" data-go="#/detay/fire" role="link" aria-label="Bugün fire kayıtları"><span class="kpi-go">' + I.go + '</span><div class="kpi-ico">' + I.flame + '</div><div class="kpi-label">Bugün Fire</div><div class="kpi-num" data-count="' + A.scrapQtyToday + '">' + num(A.scrapQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.scrapM2Today) + ' m² · %' + nf1.format(A.scrapPct) + '</div></div>' +
     '</div>' +
 
     todaySection(A) +
@@ -717,8 +742,8 @@ function woCard(o) {
   if (o.dueDate && st === 'aktif') {
     const dd = new Date(o.dueDate); const tk = new Date(); tk.setHours(0, 0, 0, 0);
     const diff = Math.ceil((dd - tk) / 86400000);
-    if (diff < 0) dueChip = '<span class="badge termin-gec">Termin: ' + dateTR(o.dueDate) + '</span>';
-    else if (diff <= 3) dueChip = '<span class="badge termin">Termin: ' + dateTR(o.dueDate) + '</span>';
+    if (diff < 0) dueChip = '<span class="badge termin-gec">Termin ' + dateTR(o.dueDate) + ' · ' + (-diff) + ' gün gecikti</span>';
+    else if (diff <= 3) dueChip = '<span class="badge termin">Termin: ' + dateTR(o.dueDate) + (diff === 0 ? ' · BUGÜN' : ' · ' + diff + ' gün') + '</span>';
   }
   const dots = procs.slice(0, 7).map((p) => {
     const ps = trLower(p.status || 'beklemede');
@@ -731,6 +756,7 @@ function woCard(o) {
     '<div class="wo-name">' + esc((o.productName || 'Ürün belirtilmemiş').trim()) + '</div>' +
     '<div class="wo-meta"><span><b>' + num(q) + ' adet</b></span><span>' + m2fmt(m2) + ' m²</span><span>' + esc(String(o.width || '').trim()) + '×' + esc(String(o.height || '').trim()) + ' mm</span><span>' + esc((o.thickness || '').trim()) + '</span><span>' + esc((o.color || '').trim()) + '</span></div>' +
     '<div class="wo-meta" style="margin-top:3px"><span>' + esc((o.customerName || '').trim()) + '</span>' + (dueChip ? '<span>' + dueChip + '</span>' : '') + '</div>' +
+    '<div class="wo-meta" style="margin-top:5px;font-size:11.5px;color:var(--muted)"><span>Açılış: ' + esc(dateTimeTR(o.createdAt)) + '</span><span>Son hareket: ' + esc(relTime(o.updatedAt)) + '</span></div>' +
     '<div class="proc-dots">' + dots + '</div>' +
     '<div class="wo-foot"><div class="progress"><i style="width:' + pct + '%"></i></div><span class="wo-proc">' + done + '/' + procs.length + '</span></div>' +
     (next && st === 'aktif' ? '<div class="next-proc">Sıradaki: <b>' + esc(next.name) + '</b>' + (trLower(next.status || '').includes('devam') ? ' · <span class="badge devam">devam ediyor</span>' : '') + '</div>' : '') +
@@ -923,17 +949,27 @@ function viewEmirDetay(id) {
     const cls = ps.startsWith('tamamland') ? 'done' : ps.includes('devam') ? 'run' : '';
     const b = ps.startsWith('tamamland') ? '<span class="badge tamamlandi">Tamamlandı</span>' : ps.includes('devam') ? '<span class="badge devam">Devam ediyor</span>' : '<span class="badge beklemede">Beklemede</span>';
     const pq = qtyOf(p.producedQuantity), sq = qtyOf(p.scrapQuantity);
+    const sure = p.startDate && p.endDate ? durTR(p.startDate, p.endDate) : '';
+    const devamEdiyor = ps.includes('devam') && p.startDate ? durTR(p.startDate, Date.now()) : '';
+    const eksik = ps.startsWith('tamamland') && !p.producedQuantity ? '<span class="badge warn" style="background:var(--warn-soft);color:var(--warn)">Adet girilmedi</span>' : '';
     return '<div class="step ' + cls + '">' +
       '<div class="step-dot">' + (cls === 'done' ? I.check : cls === 'run' ? I.play : '') + '</div>' +
-      '<div class="step-body"><div class="step-row"><span class="step-name">' + esc(p.name) + '</span>' + b + '</div>' +
+      '<div class="step-body"><div class="step-row"><span class="step-name">' + esc(p.name) + '</span>' + b + eksik + '</div>' +
       '<div class="step-info">' +
       (pq ? '<span>Üretim: <b>' + num(pq) + ' adet</b></span>' : '') +
       (sq ? '<span style="color:var(--danger)">Fire: <b>' + num(sq) + ' adet</b>' + (p.scrapReason ? ' (' + esc(p.scrapReason) + ')' : '') + '</span>' : '') +
-      (p.startDate ? '<span>Başlangıç: <b>' + dateTR(p.startDate) + ' ' + timeTR(p.startDate) + '</b></span>' : '') +
-      (p.endDate ? '<span>Bitiş: <b>' + dateTR(p.endDate) + ' ' + timeTR(p.endDate) + '</b></span>' : '') +
+      (p.startDate ? '<span>Başlangıç: <b>' + dateTimeFullTR(p.startDate) + '</b></span>' : '') +
+      (p.endDate ? '<span>Bitiş: <b>' + dateTimeFullTR(p.endDate) + '</b></span>' : '') +
+      (sure ? '<span>Süre: <b>' + sure + '</b></span>' : '') +
+      (devamEdiyor ? '<span>Süren: <b style="color:var(--warn)">' + devamEdiyor + '</b></span>' : '') +
       (p.completedBy ? '<span>Operatör: <b>' + esc(p.completedBy) + '</b></span>' : p.startedBy ? '<span>Başlatan: <b>' + esc(p.startedBy) + '</b></span>' : '') +
       '</div></div></div>';
   }).join('');
+
+  // izlenebilirlik: toplam çevrim süresi (ilk proses başlangıcı → son proses bitişi)
+  const starts = procs.map((p) => p.startDate ? new Date(p.startDate).getTime() : 0).filter(Boolean);
+  const ends = procs.map((p) => p.endDate ? new Date(p.endDate).getTime() : 0).filter(Boolean);
+  const cevrim = starts.length && ends.length ? durTR(Math.min(...starts), Math.max(...ends)) : '';
 
   const kv = (k, v) => '<div class="kv"><div class="k">' + k + '</div><div class="v">' + (v || '—') + '</div></div>';
   const singleCode = String((o.moldCodes && o.moldCodes.single && o.moldCodes.single.code) || o.productCode || '').trim();
@@ -967,8 +1003,9 @@ function viewEmirDetay(id) {
     kv('Sipariş Tarihi', o.orderDate ? dateFullTR(o.orderDate) : '—') +
     kv('Termin', o.dueDate ? dateFullTR(o.dueDate) : '—') +
     kv('Oluşturan', esc(o.createdBy)) +
-    kv('Oluşturma', o.createdAt ? dateFullTR(o.createdAt) + ' ' + timeTR(o.createdAt) : '—') +
-    kv('Son Güncelleme', o.updatedAt ? dateFullTR(o.updatedAt) + ' ' + timeTR(o.updatedAt) : '—') +
+    kv('Oluşturma', o.createdAt ? dateTimeFullTR(o.createdAt) : '—') +
+    kv('Son Güncelleme', o.updatedAt ? dateTimeFullTR(o.updatedAt) : '—') +
+    kv('Toplam Çevrim', cevrim || '—') +
     '</div>' +
     (o.additionalInfo && String(o.additionalInfo).trim() ? '<div style="margin-top:12px;padding:9px 11px;border-radius:9px;background:var(--card-2);font-size:13px;color:var(--text-2)"><b style="color:var(--text)">Not:</b> ' + esc(String(o.additionalInfo).trim()) + '</div>' : '') +
     '</div>' +
@@ -981,6 +1018,97 @@ function viewEmirDetay(id) {
     '<div class="sec-title">Proses Akışı</div>' +
     '<div class="card"><div class="stepper">' + (steps || '<div class="empty" style="padding:14px"><div class="e-t">Proses tanımı yok</div></div>') + '</div></div>' +
     '</div>';
+}
+
+/* ---------- Detay rapor ekranları (KPI kartlarından girilir) ---------- */
+const DS = { shown: {} };
+
+function detayRows(kind) {
+  const t = todayKey();
+  const rows = [];
+  if (kind === 'uretim') {
+    for (const o of S.orders) {
+      const m2e = m2Each(o);
+      for (const p of o.processes || []) {
+        if (trLower(p.status || '').startsWith('tamamland') && p.endDate && dayKey(p.endDate) === t) {
+          rows.push({ o, ts: new Date(p.endDate).getTime() || 0, ico: I.check, cls: 'ok',
+            t: '#' + o.workOrderNumber + ' · ' + p.name,
+            s: (o.customerName || '').trim() + ' · ' + num(qtyOf(p.producedQuantity)) + ' adet · ' + m2fmt(m2e * qtyOf(p.producedQuantity)) + ' m²' + (p.completedBy ? ' · ' + p.completedBy : ''),
+            right: timeTR(p.endDate) });
+        }
+      }
+    }
+  } else if (kind === 'acilan') {
+    for (const o of S.orders) {
+      if (dayKey(o.createdAt) === t) {
+        rows.push({ o, ts: new Date(o.createdAt).getTime() || 0, ico: I.plus, cls: 'info',
+          t: (o.productName || '').trim().slice(0, 42),
+          s: (o.customerName || '').trim() + ' · ' + num(qtyOf(o.customerQuantity)) + ' adet · ' + m2fmt(m2Each(o) * qtyOf(o.customerQuantity)) + ' m² · ' + (o.createdBy || ''),
+          right: timeTR(o.createdAt) });
+      }
+    }
+  } else if (kind === 'fire') {
+    for (const o of S.orders) {
+      const m2e = m2Each(o);
+      for (const p of o.processes || []) {
+        const sq = qtyOf(p.scrapQuantity);
+        if (sq > 0 && p.endDate && dayKey(p.endDate) === t) {
+          rows.push({ o, ts: new Date(p.endDate).getTime() || 0, ico: I.flame, cls: 'danger',
+            t: '#' + o.workOrderNumber + ' · ' + p.name,
+            s: 'Fire: ' + num(sq) + ' adet (' + m2fmt(m2e * sq) + ' m²)' + (p.scrapReason ? ' — ' + p.scrapReason : '') + (p.completedBy ? ' · ' + p.completedBy : ''),
+            right: timeTR(p.endDate) });
+        }
+      }
+    }
+  }
+  rows.sort((a, b) => b.ts - a.ts);
+  return rows;
+}
+
+function viewDetay(kind) {
+  if (!S.orders.length) return S.bootFailed ? connErrorView() : skeleton();
+  if (!DETAY_TITLES[kind]) return '<div class="wrap"><div class="empty"><div class="e-t">Bilinmeyen rapor</div></div></div>';
+  const A = aggregates();
+  let sum = '';
+  if (kind === 'uretim') {
+    sum = '<div class="pnum done"><b>' + num(A.outQtyToday) + '</b><span>Adet</span></div>' +
+      '<div class="pnum pend"><b>' + m2fmt(A.outM2Today) + '</b><span>m²</span></div>' +
+      '<div class="pnum run"><b>' + num(A.procDoneToday) + '</b><span>Proses</span></div>';
+  } else if (kind === 'acilan') {
+    sum = '<div class="pnum done"><b>' + num(A.openedToday) + '</b><span>İş Emri</span></div>' +
+      '<div class="pnum pend"><b>' + num(A.openedTodayQty) + '</b><span>Adet</span></div>' +
+      '<div class="pnum run"><b>' + num(A.todayEvents.filter((e) => e.kind === 'order-open').length) + '</b><span>Kayıt</span></div>';
+  } else {
+    sum = '<div class="pnum pend"><b>' + num(A.scrapQtyToday) + '</b><span>Fire Adet</span></div>' +
+      '<div class="pnum run"><b>' + m2fmt(A.scrapM2Today) + '</b><span>m²</span></div>' +
+      '<div class="pnum done"><b>%' + nf1.format(A.scrapPct) + '</b><span>Oran</span></div>';
+  }
+  return '<div class="wrap">' +
+    '<div class="card" style="display:flex;gap:8px">' + sum + '</div>' +
+    '<div class="sec-title"><span id="det-count">…</span> ' + dateFullTR(Date.now()) + '</div>' +
+    '<div class="card" style="padding:4px 12px" id="det-list"></div>' +
+    '</div>';
+}
+
+/* Liste yalnız kendi konağını yeniden çizer (WS tick'lerinde tüm ekranı değil) */
+function paintDetList() {
+  const host = $('#det-list'); if (!host) return;
+  const kind = route().id;
+  const rows = detayRows(kind);
+  const shown = DS.shown[kind] || 50;
+  const html = rows.slice(0, shown).map((r2) => {
+    const cv = r2.cls === 'danger' ? 'danger' : r2.cls === 'ok' ? 'ok' : r2.cls === 'warn' ? 'warn' : 'info';
+    return '<div class="lrow" data-go="#/emir/' + esc(r2.o.id) + '">' +
+      '<div class="li-ico" style="background:var(--' + cv + '-soft);color:var(--' + cv + ')">' + r2.ico + '</div>' +
+      '<div class="li-main"><div class="li-t">' + esc(r2.t) + '</div><div class="li-s">' + esc(r2.s) + '</div></div>' +
+      '<div class="li-end">' + esc(r2.right) + '<br><span style="font-size:10px;color:var(--muted)">' + esc(r2.o.status) + '</span></div></div>';
+  }).join('');
+  const cnt = $('#det-count'); if (cnt) cnt.textContent = num(rows.length) + ' kayıt ·';
+  host.innerHTML =
+    (html || '<div class="empty" style="padding:26px"><div class="e-t">Bugün için kayıt yok</div></div>') +
+    (rows.length > shown ? '<button class="loadmore" id="det-more">Daha fazla göster (' + num(rows.length - shown) + ')</button>' : '');
+  const more = $('#det-more');
+  if (more) more.onclick = () => { DS.shown[kind] = (DS.shown[kind] || 50) + 50; paintDetList(); };
 }
 
 function viewProsesler() {
@@ -1082,6 +1210,7 @@ function viewAyarlar() {
 /* ---------- Etkileşim ---------- */
 function afterRender(r) {
   if (r.name === 'emirler') paintWoList();
+  if (r.name === 'detay') paintDetList();
 
   // genel: data-go ile gezinme
   $('#view').onclick = (e) => {

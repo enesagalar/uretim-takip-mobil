@@ -598,5 +598,8 @@ html, body {
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .kpi { transition: transform .15s ease, box-shadow .2s ease; }
 .kpi:active { transform: scale(.97); }
+.kpi[data-go] { cursor: pointer; }
+.kpi-go { position: absolute; right: 9px; bottom: 9px; width: 15px; height: 15px; color: var(--muted); opacity: .8; }
+.kpi-go svg { width: 15px; height: 15px; }
 .card { transition: box-shadow .2s ease; }
 main { scroll-behavior: smooth; }
