@@ -530,3 +530,73 @@ html, body {
   font-size: 12.5px; font-weight: 700; border: 1px solid color-mix(in srgb, var(--brand-2) 25%, transparent);
 }
 .afchip b { font-weight: 800; opacity: .7; }
+
+/* ============================================================
+   v1.4 — Bugünkü İşler, bildirimler, görsel cilalar
+   ============================================================ */
+
+/* Bugünkü İşler kutuları */
+.today-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ttile {
+  text-align: center; padding: 10px 4px 9px;
+  border-radius: 12px; background: var(--card-2); border: 1px solid var(--border);
+}
+.ttile b { display: block; font-size: 20px; font-weight: 800; letter-spacing: -.4px; margin-top: 4px; }
+.ttile span:last-child { font-size: 9.5px; color: var(--text-2); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+.tt-ico {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
+}
+.tt-ico svg { width: 14px; height: 14px; }
+.tt-ico.info { background: var(--info-soft); color: var(--info); }
+.tt-ico.warn { background: var(--warn-soft); color: var(--warn); }
+.tt-ico.ok, .tt-ico.ok2 { background: var(--ok-soft); color: var(--ok); }
+
+/* Anlık bildirim kartları */
+#notif-host {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 12px; right: 12px; z-index: 120;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.notif {
+  pointer-events: auto; position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 14px; border-radius: 15px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 30px rgba(10,22,40,.18);
+  animation: notif-in .38s cubic-bezier(.21,1.02,.55,1);
+}
+.notif.out { animation: notif-out .3s ease forwards; }
+@keyframes notif-in { from { opacity: 0; transform: translateY(-16px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes notif-out { to { opacity: 0; transform: translateY(-10px) scale(.97); } }
+.notif .n-ico {
+  width: 36px; height: 36px; border-radius: 11px; flex: none;
+  display: grid; place-items: center;
+}
+.notif .n-ico svg { width: 18px; height: 18px; }
+.notif.info .n-ico { background: var(--info-soft); color: var(--info); }
+.notif.ok .n-ico { background: var(--ok-soft); color: var(--ok); }
+.notif.warn .n-ico { background: var(--warn-soft); color: var(--warn); }
+.notif .n-body { flex: 1; min-width: 0; }
+.notif .n-body b { display: block; font-size: 13.5px; font-weight: 800; letter-spacing: -.1px; }
+.notif .n-body small { display: block; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notif .n-x { flex: none; color: var(--muted); font-size: 13px; padding: 4px; cursor: pointer; }
+.notif .n-bar {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  transform-origin: left; animation: nbar 4.2s linear forwards;
+}
+.notif.info .n-bar { background: var(--info); }
+.notif.ok .n-bar { background: var(--ok); }
+.notif.warn .n-bar { background: var(--warn); }
+@keyframes nbar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.notif.tap:active { transform: scale(.98); }
+
+/* Görsel cilalar — yalnız ekran değişiminde (canlı yenilemede tekrar oynamaz) */
+#view.anim .wrap > * { animation: rise .34s ease both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.kpi { transition: transform .15s ease, box-shadow .2s ease; }
+.kpi:active { transform: scale(.97); }
+.card { transition: box-shadow .2s ease; }
+main { scroll-behavior: smooth; }

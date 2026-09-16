@@ -54,7 +54,10 @@ const I = {
   filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5z"/></svg>',
   mold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M12 8v8"/></svg>',
   ruler: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2M4.5 13.5l2 2"/></svg>',
-  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>'
+  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+  flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>'
 };
 
 /* ---------- Yapılandırma & Durum ---------- */
@@ -80,7 +83,8 @@ const S = {
   pollTimer: null, demoTimer: null,
   lastSync: 0, clients: 0, loading: false, bootFailed: false,
   installEvt: null, hiddenUpdate: false,
-  tunnelURL: null, tunnelBusy: false, lastTunnelTry: 0
+  tunnelURL: null, tunnelBusy: false, lastTunnelTry: 0,
+  prevSnap: null, lastNotif: 0, showAllToday: false
 };
 
 /* Liste ekranı durumu (yeniden çizimde korunur) */
@@ -267,12 +271,108 @@ async function refreshREST(silent) {
 }
 
 function setOrders(arr, live) {
+  if (live && S.prevSnap) diffAndNotify(arr);
   S.orders = arr;
   S.byId = new Map(arr.map((o) => [o.id, o]));
+  S.prevSnap = buildSnap(arr);
   S.A = null; // agrega temizle, görünümde yeniden hesaplanır
   S.lastSync = Date.now();
   S.bootFailed = false;
   renderIfStale(live);
+}
+
+/* ---------- Anlık değişiklik algılama + bildirim ---------- */
+function buildSnap(arr) {
+  const m = new Map();
+  for (const o of arr) {
+    const pr = new Map();
+    for (const p of o.processes || []) pr.set(p.id, trLower(p.status || 'beklemede'));
+    m.set(o.id, { st: trLower(o.status), pr });
+  }
+  return m;
+}
+
+function diffAndNotify(arr) {
+  const events = [];
+  for (const o of arr) {
+    const prev = S.prevSnap.get(o.id);
+    const st = trLower(o.status);
+    if (!prev) {
+      if (dayKey(o.createdAt) === todayKey()) events.push({ kind: 'new-order', o, title: 'Yeni İş Emri', sub: '#' + o.workOrderNumber + ' · ' + (o.customerName || '').trim() });
+      continue;
+    }
+    if (!prev.st.startsWith('tamamland') && st.startsWith('tamamland')) {
+      events.push({ kind: 'order-done', o, title: 'İş Emri Tamamlandı', sub: '#' + o.workOrderNumber + ' · ' + (o.productName || '').trim().slice(0, 34) });
+    }
+    for (const p of o.processes || []) {
+      const ps = trLower(p.status || 'beklemede');
+      const pp = prev.pr.get(p.id);
+      if (pp === ps) continue;
+      if (!pp || !pp.startsWith('tamamland')) {
+        if (ps.startsWith('tamamland')) events.push({ kind: 'proc-done', o, title: p.name + ' Tamamlandı', sub: '#' + o.workOrderNumber + ' · ' + (o.customerName || '').trim() });
+        else if (ps.includes('devam')) events.push({ kind: 'proc-start', o, title: p.name + ' Başladı', sub: '#' + o.workOrderNumber + ' · ' + (o.customerName || '').trim() });
+      }
+    }
+  }
+  if (events.length) notifyEvents(events.slice(0, 12));
+}
+
+const NOTIF_STYLE = {
+  'new-order': { ico: () => I.plus, cls: 'info' },
+  'order-done': { ico: () => I.flag, cls: 'ok' },
+  'proc-done': { ico: () => I.check, cls: 'ok' },
+  'proc-start': { ico: () => I.play, cls: 'warn' }
+};
+
+function notifyEvents(events) {
+  // çok olay varsa tek özet bildirimi
+  if (events.length > 3) {
+    const c = { 'new-order': 0, 'order-done': 0, 'proc-done': 0, 'proc-start': 0 };
+    events.forEach((e) => c[e.kind]++);
+    const parts = [];
+    if (c['new-order']) parts.push(c['new-order'] + ' yeni iş emri');
+    if (c['order-done']) parts.push(c['order-done'] + ' tamamlanan emir');
+    if (c['proc-done']) parts.push(c['proc-done'] + ' biten proses');
+    if (c['proc-start']) parts.push(c['proc-start'] + ' başlayan proses');
+    banner({ kind: 'new-order', title: 'Canlı Güncelleme', sub: parts.join(' · ') });
+    if (document.hidden && Notification.permission === 'granted') {
+      try { new Notification('Ekol Glass · Canlı Güncelleme', { body: parts.join(' · '), icon: './icons/icon-192.png', tag: 'utm-live' }); } catch { /* yoksay */ }
+    }
+    return;
+  }
+  for (const e of events) {
+    banner(e);
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification('Ekol Glass · ' + e.title, { body: e.sub || '', icon: './icons/icon-192.png', tag: 'utm-' + e.kind });
+      } catch { /* yoksay */ }
+    }
+  }
+}
+
+function banner(e) {
+  const now = Date.now();
+  if (now - S.lastNotif < 900) setTimeout(() => banner(e), 900 - (now - S.lastNotif));
+  S.lastNotif = Date.now();
+  const host = document.body.querySelector('#notif-host') || (() => {
+    const d = document.createElement('div');
+    d.id = 'notif-host';
+    document.body.appendChild(d);
+    return d;
+  })();
+  const style = NOTIF_STYLE[e.kind] || NOTIF_STYLE['new-order'];
+  const d = document.createElement('div');
+  d.className = 'notif ' + style.cls;
+  d.innerHTML = '<span class="n-ico">' + style.ico() + '</span>' +
+    '<span class="n-body"><b>' + esc(e.title) + '</b>' + (e.sub ? '<small>' + esc(e.sub) + '</small>' : '') + '</span>' +
+    '<span class="n-x">✕</span><i class="n-bar"></i>';
+  if (e.o && e.o.id) { d.dataset.go = '#/emir/' + e.o.id; d.classList.add('tap'); }
+  host.appendChild(d);
+  while (host.children.length > 3) host.firstChild.remove();
+  const kill = () => { d.classList.add('out'); setTimeout(() => d.remove(), 320); };
+  d.querySelector('.n-x').onclick = (ev) => { ev.stopPropagation(); kill(); };
+  if (d.classList.contains('tap')) d.onclick = () => { kill(); go('#/emir/' + e.o.id); };
+  setTimeout(kill, 4200);
 }
 
 function aggregates() {
@@ -282,15 +382,20 @@ function aggregates() {
   let openedToday = 0, openedTodayQty = 0, activeCount = 0, activeM2 = 0, activeQty = 0;
   let completedCount = 0, cancelledCount = 0, overdue = 0;
   let procDoneToday = 0, outQtyToday = 0, outM2Today = 0, scrapQtyToday = 0, scrapM2Today = 0;
+  let closedToday = 0, procStartedToday = 0;
   const perProc = new Map();
   const days = new Map();
   const dueList = [];
+  const todayEvents = [];   // BUGÜNKÜ İŞLER akışı
 
   for (const o of S.orders) {
     const q = qtyOf(o.customerQuantity);
     const m2e = m2Each(o);
     const ck = dayKey(o.createdAt);
-    if (ck === t) { openedToday++; openedTodayQty += q; }
+    if (ck === t) {
+      openedToday++; openedTodayQty += q;
+      todayEvents.push({ ts: new Date(o.createdAt).getTime() || 0, kind: 'order-open', o, label: 'İş emri açıldı', sub: (o.customerName || '').trim() + ' · ' + num(q) + ' adet' });
+    }
 
     const st = trLower(o.status);
     if (st === 'aktif') {
@@ -304,6 +409,7 @@ function aggregates() {
     } else if (st.startsWith('tamamland')) completedCount++;
     else if (st.startsWith('iptal')) cancelledCount++;
 
+    let lastEnd = 0;
     for (const p of o.processes || []) {
       const ps = trLower(p.status || 'beklemede');
       let pp = perProc.get(p.id);
@@ -313,6 +419,13 @@ function aggregates() {
         else if (ps.includes('devam')) pp.running++;
       }
       const pq = qtyOf(p.producedQuantity), sq = qtyOf(p.scrapQuantity);
+      const pStart = p.startDate ? new Date(p.startDate).getTime() : 0;
+      const pEnd = p.endDate ? new Date(p.endDate).getTime() : 0;
+      if (pEnd > lastEnd) lastEnd = pEnd;
+      if (pStart && dayKey(p.startDate) === t && ps !== 'beklemede') {
+        procStartedToday++;
+        todayEvents.push({ ts: pStart, kind: 'proc-start', o, label: p.name + ' başladı', sub: (o.customerName || '').trim() + ' · ' + num(qtyOf(p.producedQuantity) || q) + ' adet' });
+      }
       if (ps.startsWith('tamamland') && p.endDate) {
         const dk = dayKey(p.endDate);
         if (!pp.lastDate || p.endDate > pp.lastDate) pp.lastDate = p.endDate;
@@ -322,10 +435,17 @@ function aggregates() {
           procDoneToday++; outQtyToday += pq; outM2Today += m2e * pq;
           scrapQtyToday += sq; scrapM2Today += m2e * sq;
           pp.doneToday++; pp.qtyToday += pq; pp.m2Today += m2e * pq; pp.scrapQtyToday += sq;
+          todayEvents.push({ ts: pEnd, kind: 'proc-done', o, label: p.name + ' tamamlandı', sub: (o.customerName || '').trim() + ' · ' + num(pq) + ' adet üretim' });
         }
       }
     }
+    // bugün kapanan iş emri: son proses bugün bittiyse veya bugün Tamamlandı durumuna geçtiyse
+    if (st.startsWith('tamamland') && (dayKey(lastEnd || 0) === t || dayKey(o.updatedAt) === t)) {
+      closedToday++;
+      todayEvents.push({ ts: lastEnd || new Date(o.updatedAt).getTime() || 0, kind: 'order-done', o, label: 'İş emri tamamlandı', sub: (o.productName || '').trim().slice(0, 40) });
+    }
   }
+  todayEvents.sort((a, b) => b.ts - a.ts);
 
   const last7 = [];
   for (let i = 6; i >= 0; i--) {
@@ -337,7 +457,7 @@ function aggregates() {
   dueList.sort((a, b) => a.diff - b.diff);
 
   const scrapPct = outQtyToday > 0 ? (scrapQtyToday / outQtyToday) * 100 : 0;
-  S.A = { t, openedToday, openedTodayQty, activeCount, activeM2, activeQty, completedCount, cancelledCount, overdue, procDoneToday, outQtyToday, outM2Today, scrapQtyToday, scrapM2Today, scrapPct, perProc, last7, dueList, max7: Math.max(1, ...last7.map((x) => x.qty)) };
+  S.A = { t, openedToday, openedTodayQty, activeCount, activeM2, activeQty, completedCount, cancelledCount, overdue, procDoneToday, outQtyToday, outM2Today, scrapQtyToday, scrapM2Today, scrapPct, closedToday, procStartedToday, todayEvents, perProc, last7, dueList, max7: Math.max(1, ...last7.map((x) => x.qty)) };
   return S.A;
 }
 
@@ -461,6 +581,12 @@ function flashUpdate() { const s = $('#syncline'); if (s) { s.style.opacity = '.
 function render(r) {
   paintAppbar(r); paintTabbar(r); paintStatus();
   const v = $('#view');
+  const routeKey = r.name + ':' + (r.id || '');
+  if (S.lastRouteKey !== routeKey) {
+    S.lastRouteKey = routeKey;
+    S.animateNext = true;
+    v.classList.remove('anim'); void v.offsetWidth; v.classList.add('anim');
+  }
   let html = '';
   try {
     if (r.name === 'ozet') html = viewOzet();
@@ -493,6 +619,33 @@ function connErrorView() {
     '<button class="btn primary" id="retry-btn">Tekrar Dene</button>' +
     '<button class="btn ghost" id="demo-btn2">Demo Verilerle İncele</button>' +
     '</div></div>';
+}
+
+function todaySection(A) {
+  const evIcon = { 'order-open': I.plus, 'order-done': I.flag, 'proc-start': I.play, 'proc-done': I.check };
+  const evCls = { 'order-open': 'info', 'order-done': 'ok', 'proc-start': 'warn', 'proc-done': 'ok' };
+  const shown = S.showAllToday ? A.todayEvents : A.todayEvents.slice(0, 8);
+  const rows = shown.map((e) => {
+    const hh = e.ts ? timeTR(e.ts) : '';
+    return '<div class="lrow" data-go="#/emir/' + esc(e.o.id) + '">' +
+      '<div class="li-ico" style="background:var(--' + (evCls[e.kind] === 'ok' ? 'ok' : evCls[e.kind] === 'warn' ? 'warn' : 'info') + '-soft);color:var(--' + (evCls[e.kind] === 'ok' ? 'ok' : evCls[e.kind] === 'warn' ? 'warn' : 'info') + ')">' + evIcon[e.kind] + '</div>' +
+      '<div class="li-main"><div class="li-t">#' + esc(e.o.workOrderNumber) + ' · ' + esc(e.label) + '</div>' +
+      '<div class="li-s">' + esc(e.sub || '') + '</div></div>' +
+      '<div class="li-end">' + esc(hh) + '</div></div>';
+  }).join('');
+  return '<div class="sec-title">Bugünkü İşler <span style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:600">' + dateFullTR(Date.now()) + '</span></div>' +
+    '<div class="card" style="padding:14px 14px 6px">' +
+    '<div class="today-tiles">' +
+    '<div class="ttile"><span class="tt-ico info">' + I.plus + '</span><b>' + num(A.openedToday) + '</b><span>Açılan Emir</span></div>' +
+    '<div class="ttile"><span class="tt-ico ok">' + I.flag + '</span><b>' + num(A.closedToday) + '</b><span>Kapanan Emir</span></div>' +
+    '<div class="ttile"><span class="tt-ico warn">' + I.play + '</span><b>' + num(A.procStartedToday) + '</b><span>Başlayan Proses</span></div>' +
+    '<div class="ttile"><span class="tt-ico ok2">' + I.check + '</span><b>' + num(A.procDoneToday) + '</b><span>Biten Proses</span></div>' +
+    '</div>' +
+    '<div style="margin:6px -14px 0">' +
+    (rows || '<div class="empty" style="padding:20px"><div class="e-t">Bugün için kayıt yok</div></div>') +
+    '</div>' +
+    (A.todayEvents.length > 8 ? '<button class="loadmore" id="today-toggle">' + (S.showAllToday ? 'Daha az göster' : 'Tümünü göster (' + num(A.todayEvents.length) + ')') + '</button>' : '') +
+    '</div>';
 }
 
 function viewOzet() {
@@ -532,11 +685,13 @@ function viewOzet() {
   return '<div class="wrap">' +
     (isMixedContent() ? '<div class="banner warn">' + I.alert + '<div><b>Güvenli bağlantı kısıtı:</b> HTTPS sayfa üzerinden HTTP sunucuya erişilemiyor. Ayarlar → Kurulum bölümünden LAN sürümünü kullanın.</div></div>' : '') +
     '<div class="kpi-grid">' +
-    '<div class="kpi brand"><div class="kpi-ico">' + I.trendUp + '</div><div class="kpi-label">Bugün Üretim</div><div class="kpi-num">' + num(A.outQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.outM2Today) + ' m² · ' + num(A.procDoneToday) + ' proses</div></div>' +
-    '<div class="kpi info"><div class="kpi-ico">' + I.box + '</div><div class="kpi-label">Bugün Açılan</div><div class="kpi-num">' + num(A.openedToday) + '<small>iş emri</small></div><div class="kpi-sub">' + num(A.openedTodayQty) + ' adet sipariş</div></div>' +
-    '<div class="kpi ok"><div class="kpi-ico">' + I.layers + '</div><div class="kpi-label">Aktif İş Emri</div><div class="kpi-num">' + num(A.activeCount) + '</div><div class="kpi-sub">' + num(A.activeQty) + ' adet · ' + m2fmt(A.activeM2) + ' m²</div></div>' +
-    '<div class="kpi ' + (A.scrapQtyToday > 0 ? 'warn' : 'ok') + '"><div class="kpi-ico">' + I.flame + '</div><div class="kpi-label">Bugün Fire</div><div class="kpi-num">' + num(A.scrapQtyToday) + '<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.scrapM2Today) + ' m² · %' + nf1.format(A.scrapPct) + '</div></div>' +
+    '<div class="kpi brand"><div class="kpi-ico">' + I.trendUp + '</div><div class="kpi-label">Bugün Üretim</div><div class="kpi-num" data-count="' + A.outQtyToday + '">0<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.outM2Today) + ' m² · ' + num(A.procDoneToday) + ' proses</div></div>' +
+    '<div class="kpi info"><div class="kpi-ico">' + I.box + '</div><div class="kpi-label">Bugün Açılan</div><div class="kpi-num" data-count="' + A.openedToday + '">0<small>iş emri</small></div><div class="kpi-sub">' + num(A.openedTodayQty) + ' adet sipariş</div></div>' +
+    '<div class="kpi ok"><div class="kpi-ico">' + I.layers + '</div><div class="kpi-label">Aktif İş Emri</div><div class="kpi-num" data-count="' + A.activeCount + '">0</div><div class="kpi-sub">' + num(A.activeQty) + ' adet · ' + m2fmt(A.activeM2) + ' m²</div></div>' +
+    '<div class="kpi ' + (A.scrapQtyToday > 0 ? 'warn' : 'ok') + '"><div class="kpi-ico">' + I.flame + '</div><div class="kpi-label">Bugün Fire</div><div class="kpi-num" data-count="' + A.scrapQtyToday + '">0<small>adet</small></div><div class="kpi-sub">' + m2fmt(A.scrapM2Today) + ' m² · %' + nf1.format(A.scrapPct) + '</div></div>' +
     '</div>' +
+
+    todaySection(A) +
 
     '<div class="sec-title">Son 7 Gün Üretim <span class="lnk" style="color:var(--muted)">adet/gün</span></div>' +
     '<div class="card"><div class="sparkbars">' + bars + '</div></div>' +
@@ -875,14 +1030,18 @@ function viewAyarlar() {
 
     '<div class="sec-title">Bağlantı</div>' +
     '<div class="card">' +
-    '<div class="field" style="margin-bottom:10px"><label>Sunucu Adresi</label><input type="text" id="set-server" value="' + esc(cfg.server) + '" inputmode="url" autocapitalize="off" spellcheck="false"><div class="hint">Örn: http://192.168.1.200:3001 — üretim takip sunucusunun adresi</div></div>' +
-    '<div class="field" style="margin-bottom:10px"><label>Teknik Resim Adres Şablonu (PDF)</label><input type="text" id="set-pdftpl" value="' + esc(cfg.pdfTpl || '') + '" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://sunucu/klasor/{kod}.pdf"><div class="hint">{kod} yerine ürün/kalıp kodu yazılır. Teknik resimler iş emri detayında PDF olarak açılır. Bazı ürünlerde dosya olmayabilir; olmayanlarda düğme çıkmaz.</div></div>' +
-    '<div style="display:flex;gap:10px"><button class="btn primary" id="save-server" style="flex:1">Kaydet & Bağlan</button><button class="btn ghost" id="test-server" style="flex:1">Bağlantı Testi</button></div>' +
-    (cfg.manual ? '<div style="margin-top:10px"><button class="btn ghost small" id="auto-server">↺ Otomatik Bağlantıya Dön (LAN + tünel keşfi)</button></div>' : '') +
-    '<div class="hint">Şu an etkin: <b>' + esc(effectiveServer()) + (S.tunnelURL ? ' (tünel)' : '') + '</b>' + (cfg.manual ? ' — manuel' : ' — otomatik: önce LAN, olmazsa tünel') + '</div>' +
-    '<div id="test-result" style="margin-top:10px"></div>' +
-    '<div class="setrow"><div><div class="sl">Canlı Güncelleme (WebSocket)</div><div class="sd">Sunucu değişiklikleri anında yansır</div></div><label class="switch"><input type="checkbox" id="set-live" ' + (cfg.live ? 'checked' : '') + '><span class="track"></span><span class="thumb"></span></label></div>' +
+    '<div class="setrow" style="border:0;padding-top:2px"><div><div class="sl">' + (S.wsOk ? 'Bağlı · Otomatik' : 'Bağlanıyor…') + (S.tunnelURL ? ' <span class="badge aktif">TÜNEL</span>' : '') + '</div><div class="sd">' + esc(effectiveServer().replace(/^https?:\/\//, '')) + ' — LAN ya da tünel otomatik seçilir, ayar gerekmez</div></div><span class="live-pill ' + (S.wsOk ? 'on' : 'wait') + '"><span class="dot"></span>' + (S.wsOk ? 'CANLI' : '…') + '</span></div>' +
+    '<div style="display:flex;gap:10px"><button class="btn ghost small" id="reconnect-btn" style="flex:1">↻ Yeniden Bağlan</button><button class="btn ghost small" id="notify-btn" style="flex:1">🔔 Bildirimleri Etkinleştir</button></div>' +
+    '<div id="notify-state" style="margin-top:10px"></div>' +
+    (cfg.manual ? '<div style="margin-top:10px"><button class="btn ghost small" id="auto-server" style="width:100%">↺ Otomatik Bağlantıya Dön</button></div>' : '') +
+    '<details style="margin-top:12px"><summary style="font-size:13px;font-weight:700;color:var(--text-2);cursor:pointer;padding:6px 0">Gelişmiş: elle sunucu / test / teknik resim</summary><div style="padding-top:8px">' +
+    '<div class="field"><label>Sunucu Adresi</label><input type="text" id="set-server" value="' + esc(cfg.server) + '" inputmode="url" autocapitalize="off" spellcheck="false"><div class="hint">Örn: http://192.168.1.200:3001</div></div>' +
+    '<div class="field"><label>Teknik Resim Adres Şablonu (PDF)</label><input type="text" id="set-pdftpl" value="' + esc(cfg.pdfTpl || '') + '" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="http://sunucu/klasor/{kod}.pdf"><div class="hint">{kod} yerine ürün/kalıp kodu yazılır. İş emri detayında PDF olarak açılır.</div></div>' +
+    '<div style="display:flex;gap:10px"><button class="btn primary small" id="save-server" style="flex:1">Kaydet & Bağlan</button><button class="btn ghost small" id="test-server" style="flex:1">Bağlantı Testi</button></div>' +
+    '<div class="setrow" style="margin-top:8px"><div><div class="sl">Canlı Güncelleme (WebSocket)</div><div class="sd">Değişiklikler anında yansır</div></div><label class="switch"><input type="checkbox" id="set-live" ' + (cfg.live ? 'checked' : '') + '><span class="track"></span><span class="thumb"></span></label></div>' +
     '<div class="setrow"><div><div class="sl">Yedek Yenileme Aralığı</div><div class="sd">WebSocket yoksa bu sıklıkla yenilenir</div></div><select id="set-poll" style="padding:8px 10px;border-radius:9px;border:1px solid var(--border-strong);background:var(--card);color:var(--text);font-weight:700">' + [10, 20, 30, 60].map((s) => '<option value="' + s + '" ' + (cfg.pollSec == s ? 'selected' : '') + '>' + s + ' sn</option>').join('') + '</select></div>' +
+    '<div id="test-result" style="margin-top:10px"></div>' +
+    '</div></details>' +
     '</div>' +
 
     '<div class="sec-title">Uzaktan Erişim (Her Ağdan)</div>' +
@@ -945,6 +1104,28 @@ function afterRender(r) {
     if (fb) fb.onclick = openFilterSheet;
   }
 
+  if (r.name === 'ozet') {
+    // KPI sayı animasyonu — yalnız ekran girişinde, canlı yenilemede tekrar oynamaz
+    if (S.animateNext) {
+      S.animateNext = false;
+      $$('.kpi-num[data-count]').forEach((el, i) => {
+        const target = parseInt(el.getAttribute('data-count')) || 0;
+        const small = el.querySelector('small');
+        const t0 = performance.now() + i * 70;
+        const dur = 550;
+        const step = (now) => {
+          const k = Math.min(1, Math.max(0, (now - t0) / dur));
+          const v = Math.round(target * (1 - Math.pow(1 - k, 3)));
+          el.innerHTML = nf.format(v) + (small ? small.outerHTML : '');
+          if (k < 1 && el.isConnected) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+    }
+    const tt = $('#today-toggle');
+    if (tt) tt.onclick = () => { S.showAllToday = !S.showAllToday; renderIfStale(false); };
+  }
+
   if (r.name === 'emir') {
     const o = S.byId.get(r.id);
     // kalıphane açıklamasını canlı çek
@@ -984,6 +1165,31 @@ function afterRender(r) {
   }
 
   if (r.name === 'ayarlar') {
+    const rb = $('#reconnect-btn');
+    if (rb) rb.onclick = () => {
+      S.tunnelURL = null; S.wsDead = false; S.wsAttempts = 0; S.bootFailed = false; S.lastTunnelTry = 0;
+      toast('Yeniden bağlanılıyor…');
+      tryTunnel().then(() => { if (!S.wsOk) { refreshREST(true); connectWS(); } });
+      render(route());
+    };
+    const nb = $('#notify-btn');
+    const nState = $('#notify-state');
+    const paintNotifyState = () => {
+      if (!nState) return;
+      const p = ('Notification' in window) ? Notification.permission : 'unsupported';
+      nState.innerHTML = p === 'granted'
+        ? '<div class="banner info">' + I.check + '<div><b>Bildirimler açık.</b> Uygulama arka plandayken üretim güncellemeleri bildirim olarak gelir.</div></div>'
+        : p === 'denied'
+          ? '<div class="banner warn">' + I.alert + '<div>Bildirim izni reddedilmiş. Tarayıcı ayarlarından bu site için bildirimlere izin verin.</div></div>'
+          : '<div class="banner info">' + I.bell + '<div>İzin verirseniz yeni iş emri, başlayan/biten prosesler bildirim olarak düşer.</div></div>';
+    };
+    paintNotifyState();
+    if (nb) nb.onclick = async () => {
+      if (!('Notification' in window)) { toast('Bu tarayıcı bildirim desteklemiyor'); return; }
+      try { await Notification.requestPermission(); } catch { /* yoksay */ }
+      paintNotifyState();
+      if (Notification.permission === 'granted') toast('Bildirimler etkin ✔');
+    };
     $('#save-server').onclick = () => {
       const v = $('#set-server').value.trim().replace(/\/+$/, '');
       if (!/^https?:\/\/.+/.test(v)) { toast('Geçerli bir adres girin (http://…)'); return; }
@@ -993,7 +1199,8 @@ function afterRender(r) {
       cfg.pdfTpl = tp; pdfProbe.clear();
       saveCfg(); toast('Kaydedildi, bağlanılıyor…'); reboot();
     };
-    $('#auto-server').onclick = () => {
+    const asBtn = $('#auto-server');
+    if (asBtn) asBtn.onclick = () => {
       cfg.manual = false; S.tunnelURL = null; S.wsDead = false; S.wsAttempts = 0; S.lastTunnelTry = 0;
       saveCfg(); toast('Otomatik kipe geçildi'); reboot();
     };
